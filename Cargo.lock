@@ -3432,6 +3432,7 @@ dependencies = [
  "cube_core",
  "cube_input",
  "cube_render",
+ "cube_solver",
  "cube_trainer",
  "rand",
  "rand_chacha",

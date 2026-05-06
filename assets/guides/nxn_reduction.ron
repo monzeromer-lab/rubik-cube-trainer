@@ -1,0 +1,63 @@
+// N×N reduction lesson — schema demonstrator for M14.
+//
+// Walks the learner through the three reduction phases that turn any
+// 4×4 / 5×5 / N×N into a "behaves-like-a-3×3" state. Real curriculum
+// content (multiple practice cases, branching by cube size, full algs
+// inline) is M15 polish.
+(
+    id: "nxn-reduction",
+    title: "N×N Reduction — Big Cubes Made 3×3",
+    prerequisites: ["beginner-1-white-cross"],
+    estimated_minutes: 25,
+    steps: [
+        Explain(
+            text: "On any cube bigger than 3×3, you don't get a brand-new method. Instead, you reduce the cube to a state where it behaves exactly like a 3×3 — then you solve it with the 3×3 method you already know.",
+            highlight: [],
+            camera_focus: None,
+        ),
+        Explain(
+            text: "Reduction has three phases: 1) Solve the centers — group each face's inner stickers into a single block of one color. 2) Pair (4×4) or assemble (5×5) the edges — bring the wing pieces together so each visible edge reads as a single 3×3 edge. 3) Solve as a 3×3 using only outer-layer turns.",
+            highlight: [],
+            camera_focus: None,
+        ),
+        Explain(
+            text: "The 4×4 has no fixed center, so you choose by convention which color goes on each face — typically white-yellow opposite, like a 3×3. The 5×5 has a fixed center sticker per face: that pins orientation for you, no convention needed.",
+            highlight: [],
+            camera_focus: Some(Top),
+        ),
+        Demonstrate(
+            setup: "",
+            algorithm: "Uw R U R' Uw'",
+            narration: [
+                TimedText(at_seconds: 0.0, text: "Centers first: bring matching center stickers together. On a 4×4 you build a 2×2 block per face, on a 5×5 a 3×3 block."),
+                TimedText(at_seconds: 3.0, text: "Inner-slice turns (Uw, Rw, etc.) move centers between faces — the bread and butter of this phase."),
+            ],
+            speed: Slow,
+        ),
+        Explain(
+            text: "Edge pairing on a 4×4: each visible edge has two physical wing pieces. Find a pair of matching wings on the cube, line them up, then use a 3-cycle technique to bring them together without disturbing centers.",
+            highlight: [],
+            camera_focus: None,
+        ),
+        Explain(
+            text: "Edge assembly on a 5×5: each visible edge has three pieces — a 'true' edge in the middle plus two wings. The middle piece's center sticker fixes which color the assembled triple shows.",
+            highlight: [],
+            camera_focus: None,
+        ),
+        Explain(
+            text: "Once centers are solved and edges are paired/assembled, your big cube reads like a 3×3. Use only outer-layer turns from here on — slice turns would destroy the reduction.",
+            highlight: [],
+            camera_focus: None,
+        ),
+        Explain(
+            text: "Two parity cases can appear on the 4×4 that don't exist on a 3×3 or 5×5 — OLL parity (one edge looks flipped) and PLL parity (two edges look swapped). Each is fixed by a known short algorithm. The 5×5 has 3×3-like parity, so no special cases — just solve as normal.",
+            highlight: [],
+            camera_focus: Some(Top),
+        ),
+        Practice(
+            setup: "",
+            goal: Solved,
+            hint: Some("Apply the three reduction phases in order — don't try to solve everything at once."),
+        ),
+    ],
+)

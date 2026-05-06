@@ -12,6 +12,7 @@ bevy_panorbit_camera = { workspace = true }
 cube_core = { path = "../cube_core" }
 cube_input = { path = "../cube_input" }
 cube_render = { path = "../cube_render" }
+cube_solver = { path = "../cube_solver" }
 cube_trainer = { path = "../cube_trainer" }
 rand = { workspace = true }
 rand_chacha = { workspace = true }

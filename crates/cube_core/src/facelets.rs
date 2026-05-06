@@ -202,14 +202,26 @@ impl Facelets {
                         });
                     }
                     if self.size == 3 {
-                        // NOTE: An EdgeOrientationSum check would naturally
-                        // belong here, but it requires the standard
-                        // Kociemba EO definition (good axis = Y *or* Z, not
-                        // X) which differs from `cube_core::edge_orient`'s
-                        // type-specific axis. Promoting that to a real
-                        // sum-mod-2 invariant is M15 polish work; the
-                        // permutation-parity check below already catches
-                        // the main "two pieces swapped" sticker error.
+                        // Kociemba-standard EO: an edge is "good" iff its
+                        // primary sticker (U/D-color for UD-layer edges,
+                        // F/B-color for E-slice edges) currently faces a
+                        // good face — that is, its current axis is Y or Z,
+                        // never X. Sum-mod-2 across all 12 edges is 0 for
+                        // every reachable state. This check catches the
+                        // single-flipped-edge sticker error that the
+                        // permutation parity check below cannot.
+                        let edge_sum: u32 = cube
+                            .cubies
+                            .iter()
+                            .filter(|c| is_edge(c.solved_pos, self.size))
+                            .map(|c| kociemba_edge_orient(c) as u32)
+                            .sum();
+                        if edge_sum % 2 != 0 {
+                            errors.push(FaceletValidationError::EdgeOrientationSum {
+                                sum: edge_sum,
+                                modulus: edge_sum % 2,
+                            });
+                        }
                         let cp = perm_parity_of_kind(&cube, self.size, is_corner);
                         let ep = perm_parity_of_kind(&cube, self.size, is_edge);
                         if cp != ep {
@@ -442,6 +454,24 @@ fn is_corner(pos: IVec3, size: u8) -> bool {
     pos.x.abs() == outer && pos.y.abs() == outer && pos.z.abs() == outer
 }
 
+/// Kociemba-standard edge orientation for the [`Facelets::validate`] sum
+/// invariant. Differs from [`crate::cube::edge_orient`], which uses an
+/// axis-strict definition (good axis = exact original axis); the standard
+/// rule treats *any* of {Y, Z} as good and only X (R/L faces) as bad.
+/// Sum mod 2 across all 12 edges of a 3×3 must be 0 for reachable states.
+fn kociemba_edge_orient(cubie: &crate::cube::Cubie) -> u8 {
+    let h = cubie.solved_pos;
+    let primary = if h.y != 0 {
+        if h.y > 0 { IVec3::Y } else { IVec3::NEG_Y }
+    } else if h.z > 0 {
+        IVec3::Z
+    } else {
+        IVec3::NEG_Z
+    };
+    let now = cubie.orientation.apply(primary);
+    if now.x != 0 { 1 } else { 0 }
+}
+
 fn is_edge(pos: IVec3, size: u8) -> bool {
     let outer = (size as i32) - 1;
     let on_outer = [pos.x, pos.y, pos.z]
@@ -644,6 +674,25 @@ mod tests {
             e,
             FaceletValidationError::BadColorCount { color: Color::D, .. }
         )));
+    }
+
+    #[test]
+    fn validate_single_edge_flip_detected() {
+        // Swap the U-color and R-color stickers on the UR edge. That
+        // puts U-color (the UR edge's primary sticker) onto the R face
+        // — an X-axis face, which Kociemba calls "flipped". Total EO
+        // sum = 1 (mod 2 = 1), which is unreachable on a real 3×3.
+        // Validate must flag it as EdgeOrientationSum.
+        let mut f = Facelets::solved(3);
+        let u_ur = f.get(Face::U, 1, 2); // U-color sticker on the UR edge
+        let r_ur = f.get(Face::R, 0, 1); // R-color sticker on the UR edge
+        f.set(Face::U, 1, 2, r_ur);
+        f.set(Face::R, 0, 1, u_ur);
+        let errs = f.validate().unwrap_err();
+        assert!(
+            errs.iter().any(|e| matches!(e, FaceletValidationError::EdgeOrientationSum { .. })),
+            "expected EdgeOrientationSum; got {errs:?}",
+        );
     }
 
     #[test]

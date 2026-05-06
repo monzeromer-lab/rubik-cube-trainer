@@ -7,6 +7,9 @@
 //! - Alt+letter (or Caps): half-turn.
 //! - Space: enqueue 20 random moves (a quick scramble).
 //! - Backspace: clear the move queue and reset to solved.
+//! - S (M13): solve the current cube using the size-appropriate solver
+//!   (2×2/3×3/4×4). First press builds tables and may pause the UI for a
+//!   few seconds; subsequent presses are instant.
 
 use std::time::Duration;
 
@@ -15,6 +18,7 @@ use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use cube_core::{Face, Move, Turn};
 use cube_input::DragInputPlugin;
 use cube_render::{ActiveAnimation, CubeRenderConfig, CubeRenderPlugin, CubeState, PendingMoves};
+use cube_solver::{Solver2x2, Solver3x3, Solver4x4, Solver5x5};
 use cube_trainer::{
     SessionStats, SolveFlag, TimedSolve, TimerPhase, TimerState, TrainerPlugin, TrainerRng,
     start_solve,
@@ -38,12 +42,14 @@ fn main() {
         .add_plugins(TrainerPlugin)
         .insert_resource(ClearColor(Color::srgb(0.55, 0.55, 0.6)))
         .insert_resource(InputRng(ChaCha8Rng::seed_from_u64(0x00C0_FFEE)))
+        .insert_resource(SolverCache::default())
         .add_systems(Startup, setup_scene)
         .add_systems(
             Update,
             (
                 keyboard_size_switch,
                 keyboard_to_moves,
+                keyboard_solve,
                 trainer_keyboard_flow,
                 detect_solve_completion,
             ),
@@ -186,6 +192,70 @@ fn setup_scene(mut commands: Commands) {
 
 #[derive(Resource)]
 struct InputRng(ChaCha8Rng);
+
+/// Lazily-built solvers per size. Each is `None` until the user first
+/// presses `S` for a cube of that size — we don't pay the table-build
+/// cost (a few seconds for 3×3) at startup.
+#[derive(Resource, Default)]
+struct SolverCache {
+    two: Option<Solver2x2>,
+    three: Option<Solver3x3>,
+    four: Option<Solver4x4>,
+    five: Option<Solver5x5>,
+}
+
+/// `S`: solve the current cube. Picks the appropriate solver for the
+/// current size, building it on first press. Solution moves are pushed to
+/// [`PendingMoves`] so the renderer animates each turn.
+fn keyboard_solve(
+    keys: Res<ButtonInput<KeyCode>>,
+    state: Res<CubeState>,
+    mut pending: ResMut<PendingMoves>,
+    mut cache: ResMut<SolverCache>,
+) {
+    if !keys.just_pressed(KeyCode::KeyS) {
+        return;
+    }
+    let cube = &state.cube;
+    let solution: Result<cube_core::MoveSeq, String> = match cube.size {
+        2 => {
+            if cache.two.is_none() {
+                info!("solver: building 2×2 distance table (one-time, ~1–2s)");
+                cache.two = Some(Solver2x2::new());
+            }
+            cache.two.as_ref().unwrap().solve(cube).map_err(|e| e.to_string())
+        }
+        3 => {
+            if cache.three.is_none() {
+                info!("solver: building 3×3 pruning tables (one-time, ~few seconds)");
+                cache.three = Some(Solver3x3::new());
+            }
+            cache.three.as_ref().unwrap().solve(cube).map_err(|e| e.to_string())
+        }
+        4 => {
+            if cache.four.is_none() {
+                info!("solver: building 4×4 (incl. inner 3×3 tables, one-time, ~few seconds)");
+                cache.four = Some(Solver4x4::new());
+            }
+            cache.four.as_ref().unwrap().solve(cube).map_err(|e| e.to_string())
+        }
+        5 => {
+            if cache.five.is_none() {
+                info!("solver: building 5×5 (incl. inner 3×3 tables, one-time, ~few seconds)");
+                cache.five = Some(Solver5x5::new());
+            }
+            cache.five.as_ref().unwrap().solve(cube).map_err(|e| e.to_string())
+        }
+        n => Err(format!("no solver for size {n}")),
+    };
+    match solution {
+        Ok(seq) => {
+            info!("solver: {} moves — {}", seq.len(), seq);
+            pending.enqueue_all(seq);
+        }
+        Err(e) => warn!("solver: {}", e),
+    }
+}
 
 fn keyboard_to_moves(
     keys: Res<ButtonInput<KeyCode>>,

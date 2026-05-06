@@ -90,6 +90,13 @@ pub const STARTER_ALGS: &[AlgEntry] = &[
         family: AlgFamily::Pll,
         notation: "R U' R U R U R U' R' U' R2",
     },
+    // M15 polish: T-perm, Y-perm, Ja/Jb, F-perm fail the
+    // pll_algorithms_preserve_first_two_layers test under the current
+    // simulator. The Sune-family OLLs and the Aa/H/Ua PLLs above pass,
+    // so it's something subtle in those longer algorithms' interaction
+    // with our parser/apply path. Tracked for the M15 alg-library
+    // verification pass (cross-check against algdb.net + dive into the
+    // first-failing move).
     // --- F2L pair insertions ---
     AlgEntry {
         id: "f2l-basic-pair-fr",

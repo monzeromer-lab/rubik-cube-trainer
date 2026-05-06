@@ -331,6 +331,30 @@ mod tests {
     }
 
     #[test]
+    fn parse_shipped_nxn_reduction_asset() {
+        let ron_text = include_str!("../../../assets/guides/nxn_reduction.ron");
+        let lesson = parse_lesson(ron_text).expect("shipped asset must parse");
+        assert_eq!(lesson.id, "nxn-reduction");
+        assert!(!lesson.steps.is_empty());
+        // M14's reduction lesson is size-agnostic in text but every
+        // notation string must still parse on the cube size we'd run it
+        // against. We try size 4 (covers wide moves like Uw/Rw) since the
+        // 5×5-only narration is text-only, no slice notation.
+        for step in &lesson.steps {
+            match step {
+                Step::Demonstrate { setup, algorithm, .. } => {
+                    MoveSeq::parse(setup, 4).expect("demo setup must parse on size 4");
+                    MoveSeq::parse(algorithm, 4).expect("demo algorithm must parse on size 4");
+                }
+                Step::Practice { setup, .. } => {
+                    MoveSeq::parse(setup, 4).expect("practice setup must parse on size 4");
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
     fn parse_minimal_lesson_round_trips() {
         let ron_text = r#"
             (
