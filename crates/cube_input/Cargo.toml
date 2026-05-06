@@ -1,0 +1,13 @@
+[package]
+name = "cube_input"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bevy plugin: pointer-pick + drag-to-turn input for the Rubik's cube."
+
+[dependencies]
+bevy = { workspace = true }
+cube_core = { path = "../cube_core" }
+cube_render = { path = "../cube_render" }
+glam = { workspace = true }

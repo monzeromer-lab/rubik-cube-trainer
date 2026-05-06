@@ -1,0 +1,16 @@
+[package]
+name = "cube_solver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Custom Rubik's cube solver. IDA* foundation, 2×2 with full pruning table, two-phase 3×3, reduction-based 4×4/5×5."
+
+[dependencies]
+cube_core = { path = "../cube_core" }
+glam = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }
+rand_chacha = { workspace = true }

@@ -1,0 +1,54 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/monzer-omer/rubiks-trainer"
+
+[workspace.dependencies]
+bevy = { version = "0.18", default-features = false, features = [
+    "bevy_asset",
+    "bevy_color",
+    "bevy_core_pipeline",
+    "bevy_log",
+    "bevy_pbr",
+    "bevy_picking",
+    "mesh_picking",
+    "bevy_render",
+    "bevy_scene",
+    "bevy_sprite",
+    "bevy_state",
+    "bevy_text",
+    "bevy_ui",
+    "bevy_window",
+    "bevy_winit",
+    "default_font",
+    "multi_threaded",
+    "tonemapping_luts",
+    "x11",
+    "zstd_rust",
+] }
+bevy_egui = "0.36"
+bevy_panorbit_camera = "0.34"
+glam = { version = "0.30", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+ron = "0.10"
+thiserror = "2"
+rand = "0.9"
+rand_chacha = "0.9"
+proptest = "1"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+debug = 1
+opt-level = 3

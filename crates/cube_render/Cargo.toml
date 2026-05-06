@@ -1,0 +1,12 @@
+[package]
+name = "cube_render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Bevy plugin: cube meshes, materials, and transform sync from cube_core::Cube state."
+
+[dependencies]
+bevy = { workspace = true }
+cube_core = { path = "../cube_core" }
+glam = { workspace = true }

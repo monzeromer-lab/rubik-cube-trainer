@@ -1,0 +1,17 @@
+[package]
+name = "rubiks-trainer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rubik's cube game and trainer."
+
+[dependencies]
+bevy = { workspace = true }
+bevy_panorbit_camera = { workspace = true }
+cube_core = { path = "../cube_core" }
+cube_input = { path = "../cube_input" }
+cube_render = { path = "../cube_render" }
+cube_trainer = { path = "../cube_trainer" }
+rand = { workspace = true }
+rand_chacha = { workspace = true }

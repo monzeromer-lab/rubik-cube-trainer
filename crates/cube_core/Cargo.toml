@@ -1,0 +1,21 @@
+[package]
+name = "cube_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Pure-logic Rubik's cube domain model: pieces, moves, notation, facelets, scrambles."
+
+[dependencies]
+glam = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+
+[[example]]
+name = "scramble_demo"
+path = "examples/scramble_demo.rs"

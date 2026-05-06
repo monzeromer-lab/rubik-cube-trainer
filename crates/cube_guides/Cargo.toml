@@ -1,0 +1,13 @@
+[package]
+name = "cube_guides"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Lesson schema, GoalPredicate evaluator, and step engine for the Rubik's trainer's progressive curriculum."
+
+[dependencies]
+cube_core = { path = "../cube_core" }
+serde = { workspace = true }
+ron = { workspace = true }
+thiserror = { workspace = true }

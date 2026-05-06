@@ -1,0 +1,43 @@
+// Lesson 1 of beginner LBL: forming the white cross on the top face.
+//
+// This file is the M11 schema demonstrator. Real curriculum content
+// (full text, narration, multiple practice cases) is M11/M15 polish work
+// — needs human authoring + iteration with novice testers.
+(
+    id: "beginner-1-white-cross",
+    title: "Beginner 1 — The White Cross",
+    prerequisites: [],
+    estimated_minutes: 10,
+    steps: [
+        Explain(
+            text: "Welcome! In this lesson you'll build a white cross on the top face of the cube. Each edge of the cross must match the colour of the side face it touches.",
+            highlight: [
+                (0, 2, 2),
+                (2, 2, 0),
+                (0, 2, -2),
+                (-2, 2, 0),
+            ],
+            camera_focus: Some(Top),
+        ),
+        Demonstrate(
+            setup: "F D R F2 D' F R'",
+            algorithm: "F R F2 R' D R' D' F",
+            narration: [
+                TimedText(at_seconds: 0.0, text: "First, find a white edge piece."),
+                TimedText(at_seconds: 1.5, text: "Bring it to the bottom layer."),
+                TimedText(at_seconds: 3.0, text: "Then rotate it up to its slot."),
+            ],
+            speed: Slow,
+        ),
+        Practice(
+            setup: "F D R F2 D' F R'",
+            goal: WhiteCrossSolved,
+            hint: Some("F R F2 R' D R' D' F"),
+        ),
+        Explain(
+            text: "Great! When the four white edges form a plus sign on top with their side colours aligned, the cross is done.",
+            highlight: [],
+            camera_focus: Some(Top),
+        ),
+    ],
+)
