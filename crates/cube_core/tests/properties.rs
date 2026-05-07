@@ -120,9 +120,7 @@ proptest! {
 }
 
 /// 10,000-move stress test: §1 success criterion ("zero state corruption").
-/// Ignored from default `cargo test`; run with `--ignored` for the heavy check.
 #[test]
-#[ignore]
 fn ten_thousand_moves_zero_corruption() {
     let mut rng = ChaCha8Rng::seed_from_u64(0xDEAD_BEEF);
     for size in 2..=5u8 {
