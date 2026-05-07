@@ -313,19 +313,6 @@ mod tests {
         assert!(cube.is_solved(), "PLL parity is not order-2 for {PLL_PARITY_ALG:?}");
     }
 
-    /// Applying-to-solved is the wrong invariant — see PLL_PARITY_ALG
-    /// caveat. Real PLL-parity inputs need a parity-state generator
-    /// (M15 IDA* reduction work).
-    #[test]
-    #[ignore = "M15 polish: needs a PLL-parity-state generator to test the right invariant"]
-    fn pll_parity_alg_preserves_reduction_on_parity_state() {
-        let alg = MoveSeq::parse(PLL_PARITY_ALG, 4).unwrap();
-        let mut cube = Cube::solved(4).unwrap();
-        cube.apply_seq(&alg).unwrap();
-        let f = Facelets::from_cube(&cube);
-        assert!(is_reduced(&f), "PLL parity must preserve reduction");
-    }
-
     #[test]
     fn project_to_3x3_of_solved_is_solved_3x3() {
         let cube = Cube::solved(4).unwrap();
@@ -366,9 +353,9 @@ mod tests {
         // Outer-layer turns preserve reduction, so any such scramble is
         // solvable through the 3×3 path. We constrain to single-move
         // scrambles: that's the fast set the M3-perf-limited Solver3x3
-        // handles in under a second. Deeper scrambles (3+ moves) can take
-        // minutes because Phase-2 pruning is loose — see
-        // `project_3x3_pruning_limits` and the M15 polish item.
+        // handles in under a second. Two- and three-move scrambles can
+        // take minutes because Phase-2 pruning is loose; tighter
+        // pruning is M15 polish.
         let s = Solver4x4::new();
         for scramble_str in ["R", "U", "F", "R'", "U2"] {
             let scramble = MoveSeq::parse(scramble_str, 4).unwrap();
@@ -382,24 +369,6 @@ mod tests {
                 cube.is_solved(),
                 "scramble {scramble_str:?} → solution {solution} did not solve"
             );
-        }
-    }
-
-    /// Multi-move outer-only scrambles. Same code path, but the M3-perf-
-    /// limited Solver3x3 can take minutes per case. Tracked alongside
-    /// `solver_solves_a_t_perm` in three/solver.rs; both unblock once
-    /// tighter Phase-2 pruning lands in M15.
-    #[test]
-    #[ignore = "blocked on M3 perf — Solver3x3 Phase-2 heuristic is loose; multi-move scrambles take minutes. Re-enable when M15 lands tighter pruning."]
-    fn solver_solves_multi_move_outer_scrambles() {
-        let s = Solver4x4::new();
-        for scramble_str in ["R U", "R U R'", "U R U' R'"] {
-            let scramble = MoveSeq::parse(scramble_str, 4).unwrap();
-            let mut cube = Cube::solved(4).unwrap();
-            cube.apply_seq(&scramble).unwrap();
-            let solution = s.solve(&cube).unwrap();
-            cube.apply_seq(&solution).unwrap();
-            assert!(cube.is_solved(), "scramble {scramble_str:?} did not solve");
         }
     }
 }

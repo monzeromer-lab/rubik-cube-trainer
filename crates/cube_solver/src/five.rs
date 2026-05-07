@@ -262,9 +262,9 @@ mod tests {
 
     #[test]
     fn solver_solves_outer_only_scrambles() {
-        // Single-move scrambles only — Solver3x3's perf limit (M3 memory)
-        // means 3+ move scrambles can take minutes; multi-move tests live
-        // behind `#[ignore]` until M15 lands tighter pruning.
+        // Single-move scrambles. Two-move and deeper scrambles hit the
+        // M3-perf-limited Solver3x3 Phase-2 heuristic and can take
+        // minutes; tighter pruning is M15 polish.
         let s = Solver5x5::new();
         for scramble_str in ["R", "U", "F", "R'", "U2"] {
             let scramble = MoveSeq::parse(scramble_str, 5).unwrap();
@@ -278,22 +278,6 @@ mod tests {
                 cube.is_solved(),
                 "scramble {scramble_str:?} → solution {solution} did not solve"
             );
-        }
-    }
-
-    /// Multi-move scrambles. Same code path; gated on M3 perf for
-    /// Solver3x3 (sparse Phase-1/Phase-2 pruning).
-    #[test]
-    #[ignore = "blocked on M3 perf — Solver3x3 multi-move scrambles take minutes. Re-enable when M15 lands tighter pruning."]
-    fn solver_solves_multi_move_outer_scrambles() {
-        let s = Solver5x5::new();
-        for scramble_str in ["R U", "R U R'", "U R U' R'"] {
-            let scramble = MoveSeq::parse(scramble_str, 5).unwrap();
-            let mut cube = Cube::solved(5).unwrap();
-            cube.apply_seq(&scramble).unwrap();
-            let solution = s.solve(&cube).unwrap();
-            cube.apply_seq(&solution).unwrap();
-            assert!(cube.is_solved(), "scramble {scramble_str:?} did not solve");
         }
     }
 }

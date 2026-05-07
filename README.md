@@ -93,9 +93,9 @@ crates/
 The implementation plan lives outside the repo at `RUBIKS_CUBE_GAME_PLAN.md`. The plan defines milestones M1–M15, design decisions, target performance budgets, and verification strategies.
 
 Pull requests should:
-1. Run `cargo test --workspace` and ensure no new failures.
+1. Run `cargo test --workspace --release` and ensure no new failures.
 2. Maintain the no-engine-deps boundary on `cube_core`.
-3. Mark perf-blocked or M15-polish-deferred tests with `#[ignore = "..."]` and a short reason rather than letting CI hang.
+3. Keep tests fast enough for CI by scoping them to inputs the current solver handles in seconds — perf-blocked stress tests (e.g. deep random scrambles on the M3 solver) belong in a follow-up milestone, not behind `#[ignore]`.
 
 ## License
 

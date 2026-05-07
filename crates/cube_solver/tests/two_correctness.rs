@@ -1,9 +1,9 @@
 //! End-to-end correctness for the 2×2 solver.
 //!
 //! Per the §14.4 verification plan, the solver-correctness tests are the
-//! mandatory gate before M2 closes. The cheap scramble-and-solve test runs
-//! every `cargo test`; the 10K-scramble stress test is `--ignored` to keep
-//! CI fast.
+//! mandatory gate before M2 closes. The 1K and 10K stress tests both run
+//! every `cargo test --release` — the full distance table makes solves
+//! near-instant.
 
 use cube_core::{Cube, Face, Move, MoveSeq, Turn};
 use cube_solver::Solver2x2;
@@ -53,7 +53,6 @@ fn one_thousand_scrambles_all_solve() {
 }
 
 #[test]
-#[ignore]
 fn ten_thousand_scrambles_all_solve_optimally() {
     let solver = shared_solver();
     let mut rng = ChaCha8Rng::seed_from_u64(0xDEAD_BEEF_0202_0202);
