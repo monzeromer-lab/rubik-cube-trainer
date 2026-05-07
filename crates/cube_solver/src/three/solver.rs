@@ -4,7 +4,7 @@
 use cube_core::{Cube, Move, MoveSeq};
 use thiserror::Error;
 
-use super::coords::{encode_co, encode_cp, encode_ep, encode_udslice, encode_udslice_perm};
+use super::coords::{encode_co, encode_cp, encode_eo, encode_ep, encode_udslice, encode_udslice_perm};
 use super::moves::{PHASE1_MOVES, PHASE2_TO_PHASE1};
 use super::state::State3x3;
 use super::tables::{MoveTables, PruningTables, apply_corner_op, apply_edge_op};
@@ -78,7 +78,6 @@ impl Solver3x3 {
     fn phase1_search(&self, state: &State3x3) -> Option<Vec<usize>> {
         let mut bound = self.phase1_heuristic(state);
         // God's number for Phase 1 in HTM is 12; we leave generous slack.
-        // With only the (co, udslice) heuristic, deeper bounds can be slow.
         const MAX_PHASE1: u8 = 12;
         while bound <= MAX_PHASE1 {
             let mut path: Vec<usize> = Vec::new();
@@ -120,15 +119,17 @@ impl Solver3x3 {
     #[inline]
     fn phase1_heuristic(&self, state: &State3x3) -> u8 {
         let co = encode_co(&state.corners) as u16;
+        let eo = encode_eo(&state.edges) as u16;
         let ud = encode_udslice(&state.edges) as u16;
-        // The (co, udslice) pair-pruning table fully covers its space and
-        // its values are exact BFS distances — admissible by construction.
-        // The (eo, udslice) and (co, eo) tables are sparse here (single
-        // representative per coord pair leaves many slots UNVISITED=255),
-        // so using them in `max` would over-estimate and break IDA*.
-        // M3 ships with the (co, udslice) heuristic only; tightening is
-        // tracked as an M15 polish item.
-        self.pruning.p1_co_udslice_at(co, ud)
+        // Both pair tables are admissible: (co, udslice) is fully covered
+        // because each coordinate transitions independently of the other,
+        // and (eo, udslice) is closed under moves so single-rep BFS reaches
+        // exactly the orbit of states that can ever appear at this lookup
+        // (anything we'd query came from applying moves to solved). Max is
+        // tighter than either alone.
+        self.pruning
+            .p1_co_udslice_at(co, ud)
+            .max(self.pruning.p1_eo_udslice_at(eo, ud))
     }
 
     #[inline]
@@ -310,9 +311,10 @@ mod tests {
     fn solver_solves_simple_scrambles() {
         let s = solver();
         // Single-move scrambles via the `MoveSeq::parse` + `apply_seq` path.
-        // Multi-move coverage is M15 polish — the (co, udslice)-only Phase-1
-        // heuristic and loose Phase-2 pruning mean even 2-move scrambles
-        // can take minutes today.
+        // The Phase-1 heuristic is now tight ((co, udslice) and (eo,
+        // udslice) maxed), but Phase-2 pruning is still loose — multi-move
+        // scrambles can take minutes today and stay behind the M15 polish
+        // gate.
         for scramble in ["R", "U", "F", "R'", "U2", "F'"] {
             let scr = MoveSeq::parse(scramble, 3).unwrap();
             let mut cube = Cube::solved(3).unwrap();
