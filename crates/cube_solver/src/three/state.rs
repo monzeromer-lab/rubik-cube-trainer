@@ -4,7 +4,10 @@
 //! edges with parity-aware orientation values. This module extracts that
 //! representation from a `cube_core::Cube` and provides goal predicates.
 
-use cube_core::{Cube, Cubie, corner_twist as cube_core_corner_twist, edge_orient as cube_core_edge_orient};
+use cube_core::{
+    Cube, Cubie, Orient, corner_twist as cube_core_corner_twist,
+    edge_orient as cube_core_edge_orient,
+};
 use glam::IVec3;
 
 /// 8 corner home positions in Singmaster/Kociemba order: URF, UFL, ULB,
@@ -56,8 +59,18 @@ pub struct CornerState {
 pub struct EdgeState {
     /// `perm[slot]` is the home index of the edge currently at `slot`.
     pub perm: [u8; 12],
-    /// Edge orientation, 0..2 (0 = good, 1 = flipped).
+    /// Edge orientation bit per slot, 0 = good (primary on home axis),
+    /// 1 = flipped. Derived from [`Self::rot`]; kept in lockstep so existing
+    /// coord encoders and goal tests can read it directly.
     pub orient: [u8; 12],
+    /// Full 24-element rotation per slot (cube symmetry-group index). The
+    /// canonical ground truth for orientation. `apply_edge_op` composes
+    /// `move_rot ∘ rot[src]` and rederives `orient` from the result.
+    ///
+    /// Tracked as `u8` rather than `Orient` so the struct stays `Copy + Hash`
+    /// and `repr(packed)`-friendly; the `u8` is always a valid `Orient`
+    /// index in `0..24`.
+    pub rot: [u8; 12],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -77,8 +90,41 @@ impl EdgeState {
         Self {
             perm: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
             orient: [0; 12],
+            rot: [0; 12],
         }
     }
+
+    /// Return the cubie home (0..12) currently at `slot`. Convenience to
+    /// keep `derive_orient_bit` and friends from peeking at private fields.
+    #[inline]
+    pub fn cubie_at(&self, slot: usize) -> u8 {
+        self.perm[slot]
+    }
+}
+
+/// Derive the axis-strict EO bit for a cubie of home index `cubie` whose
+/// 24-element rotation index is `rot_idx`. Matches `cube_core::edge_orient`:
+/// the bit is 0 iff the cubie's primary axis (Y for UD-layer, Z for E-slice)
+/// is currently still on its home axis.
+#[inline]
+pub fn derive_orient_bit(cubie: u8, rot_idx: u8) -> u8 {
+    let home = EDGE_HOMES[cubie as usize];
+    let (primary, good_axis) = if home.y != 0 {
+        let dir = if home.y > 0 { IVec3::Y } else { IVec3::NEG_Y };
+        (dir, 1u8)
+    } else {
+        let dir = if home.z > 0 { IVec3::Z } else { IVec3::NEG_Z };
+        (dir, 2u8)
+    };
+    let now = Orient(rot_idx).apply(primary);
+    let now_axis = if now.x != 0 {
+        0
+    } else if now.y != 0 {
+        1
+    } else {
+        2
+    };
+    if now_axis == good_axis { 0 } else { 1 }
 }
 
 impl State3x3 {
@@ -131,6 +177,7 @@ impl State3x3 {
             let home_idx = position_index(&EDGE_HOMES, cubie.solved_pos);
             edges.perm[slot] = home_idx as u8;
             edges.orient[slot] = edge_orient(cubie);
+            edges.rot[slot] = cubie.orientation.0;
         }
 
         Self { corners, edges }

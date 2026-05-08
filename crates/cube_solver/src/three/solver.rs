@@ -312,10 +312,6 @@ mod tests {
     #[test]
     fn solver_solves_simple_scrambles() {
         let s = solver();
-        // Single-move scrambles via the `MoveSeq::parse` + `apply_seq` path.
-        // Multi-move coverage is M15 polish — the (co, udslice)-only Phase-1
-        // heuristic and loose Phase-2 pruning mean even 2-move scrambles
-        // can take minutes today.
         for scramble in ["R", "U", "F", "R'", "U'", "U2", "F'"] {
             let scr = MoveSeq::parse(scramble, 3).unwrap();
             let mut cube = Cube::solved(3).unwrap();
@@ -326,15 +322,10 @@ mod tests {
         }
     }
 
-    /// Multi-move 3×3 scrambles. Blocked on M3 perf — a true Kociemba-
-    /// standard EO model (rather than our axis-strict one) is needed before
-    /// the (eo, udslice) joint pruning can be admissible. Tracked for
-    /// deeper M15 work.
     #[test]
-    #[ignore = "M15 polish: needs Kociemba-standard EO rewrite (current axis-strict EO breaks sum invariant under multi-move sequences, blocks tighter pruning)"]
     fn solver_solves_multi_move_scrambles() {
         let s = solver();
-        for scramble in ["R U", "R U R'", "U R U' R'"] {
+        for scramble in ["R U", "R U R'", "U R U' R'", "F R U' R' F'"] {
             let scr = MoveSeq::parse(scramble, 3).unwrap();
             let mut cube = Cube::solved(3).unwrap();
             cube.apply_seq(&scr).unwrap();

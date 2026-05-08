@@ -69,6 +69,10 @@ pub fn decode_eo(coord: u32) -> EdgeState {
     EdgeState {
         perm: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
         orient,
+        // Decoded coord-only states don't carry a real rotation; downstream
+        // code reads `orient` directly. Leaving `rot` at identity keeps the
+        // state hashable and round-trippable through `encode_eo`.
+        rot: [0; 12],
     }
 }
 
@@ -170,7 +174,7 @@ pub fn decode_udslice(coord: u32) -> EdgeState {
             perm[slot] = ud_iter.next().unwrap();
         }
     }
-    EdgeState { perm, orient: [0; 12] }
+    EdgeState { perm, orient: [0; 12], rot: [0; 12] }
 }
 
 // ---- Corner permutation (Phase 2) ----
@@ -197,7 +201,7 @@ pub fn decode_ep(coord: u32) -> EdgeState {
     let mut perm = [0u8; 12];
     perm[..8].copy_from_slice(&p);
     perm[8..].copy_from_slice(&[8, 9, 10, 11]);
-    EdgeState { perm, orient: [0; 12] }
+    EdgeState { perm, orient: [0; 12], rot: [0; 12] }
 }
 
 // ---- E-slice permutation (Phase 2: edges 8..12 within slots 8..12) ----
@@ -219,7 +223,7 @@ pub fn decode_udslice_perm(coord: u32) -> EdgeState {
     for i in 0..4 {
         perm[8 + i] = p[i] + 8;
     }
-    EdgeState { perm, orient: [0; 12] }
+    EdgeState { perm, orient: [0; 12], rot: [0; 12] }
 }
 
 // ---- Lex rank / unrank helpers ----
