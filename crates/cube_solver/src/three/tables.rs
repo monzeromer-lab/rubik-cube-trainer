@@ -4,12 +4,14 @@
 //! deliberately keep the tables in memory only — disk-cache wiring lives in
 //! `cube_render`/`cube_trainer` later milestones (plan §13 layout).
 
+use cube_core::Orient;
+
 use super::coords::{
-    N_CO, N_CP, N_EO, N_EP, N_UDSLICE, N_UDSLICE_PERM, decode_eo, decode_udslice_mask, encode_co,
-    encode_cp, encode_eo, encode_ep, encode_udslice, encode_udslice_perm, udslice_from_mask,
+    N_CO, N_CP, N_EO, N_EP, N_UDSLICE, N_UDSLICE_PERM, encode_co, encode_cp, encode_eo, encode_ep,
+    encode_udslice, encode_udslice_perm,
 };
 use super::moves::{CornerMoveOp, EdgeMoveOp, PHASE2_TO_PHASE1, derive_phase1_ops};
-use super::state::{CornerState, EdgeState, State3x3};
+use super::state::{CornerState, EdgeState, State3x3, derive_orient_bit};
 
 pub const N_PHASE1_MOVES: usize = 18;
 pub const N_PHASE2_MOVES: usize = 10;
@@ -42,64 +44,43 @@ pub fn apply_corner_op(s: &CornerState, op: &CornerMoveOp) -> CornerState {
 
 /// Apply a move's edge op to an [`EdgeState`].
 ///
-/// **Known correctness limitation (M3 polish, blocks multi-move scrambles):**
-/// the additive `delta_ud` / `delta_es` deltas in [`EdgeMoveOp`] match
-/// [`cube_core::edge_orient`] (axis-strict EO) on single-move sequences
-/// from solved, but they do **not** compose correctly across multi-move
-/// sequences for any reasonable EO definition. The ground truth: an
-/// edge's orientation bit transition under a face move depends on the
-/// cubie's *full current orientation* (a 24-element rotation), not just
-/// (cubie type, move, slot). The additive bit-XOR model collapses that
-/// to a single bit and loses the dependency.
-///
-/// Two empirical symptoms:
-///
-/// - **Parity isn't preserved.** Run any scramble of ≥ 2 random face
-///   moves through `apply_edge_op` starting from `EdgeState::solved`
-///   and check `sum(orient) % 2`. ~45% of random 8-move scrambles
-///   produce odd parity — impossible in the real cube state space,
-///   where every face turn flips an even number of edge orientations.
-/// - **`(eo, udslice)` projection isn't closed under moves.** Two
-///   real-cube states with the same `(eo, udslice)` coord can transition
-///   to different `(new_eo, new_udslice)` coords under the same face
-///   move, because the orientation flip depends on more state than the
-///   bit. The single-representative BFS from solved visits only ~495
-///   of the 1,013,760 cells before all reachable transitions become
-///   self-loops, leaving the heuristic table mostly empty.
-///
-/// Knock-on effect for the solver: starting from a state read by
-/// [`State3x3::from_cube`] on a `cube_core` cube scrambled by ≥ 2 face
-/// moves, applying the inverse via this function does not in general
-/// land at all-zeros orient, so the Phase-1 IDA* `is_in_g1` check fails
-/// to recognize the natural Phase-1 ending. The search has to find a
-/// different G1 endpoint in the (broken) `apply_edge_op` graph —
-/// possible in some cases but slow (minutes per scramble), and the
-/// resulting move sequence still solves the cube via `cube_core`
-/// because the permutation half of the move ops *is* correct.
-///
-/// The fix replaces the additive delta model with full-state simulation:
-/// thread a real [`cube_core::Cube`] through the search and read EO
-/// back via [`State3x3::from_cube`] at each step, OR precompute
-/// `cube_move_table[full_state_hash][move] → new_full_state` by
-/// simulating moves on canonical reps. Either way it's a sizeable
-/// chunk of M3 polish — see plan §6.4 / §14.4.
+/// Composes the move's 24-element rotation onto each cycled cubie's existing
+/// rotation, then rederives the axis-strict EO bit from the new rotation.
+/// This is the only EO model that closes under multi-move sequences — see
+/// the historical note at the bottom for what the additive delta model
+/// got wrong.
 pub fn apply_edge_op(s: &EdgeState, op: &EdgeMoveOp) -> EdgeState {
     let mut new_perm = [0u8; 12];
     let mut new_orient = [0u8; 12];
+    let mut new_rot = [0u8; 12];
+    let move_rot = Orient(op.move_rot);
     for slot in 0..12 {
         let src = op.perm[slot] as usize;
         let cubie = s.perm[src];
-        // Type of the cubie that's moving: UD-layer iff home index < 8.
-        let delta = if (cubie as usize) < super::state::E_SLICE_FIRST {
-            op.delta_ud[slot]
-        } else {
-            op.delta_es[slot]
-        };
         new_perm[slot] = cubie;
-        new_orient[slot] = (s.orient[src] + delta) % 2;
+        let src_rot = Orient(s.rot[src]);
+        let composed = if op.in_cycle[slot] {
+            move_rot.compose(src_rot)
+        } else {
+            src_rot
+        };
+        new_rot[slot] = composed.0;
+        new_orient[slot] = derive_orient_bit(cubie, composed.0);
     }
-    EdgeState { perm: new_perm, orient: new_orient }
+    EdgeState { perm: new_perm, orient: new_orient, rot: new_rot }
 }
+
+// Historical note (kept so this doesn't get reintroduced): the previous
+// implementation used per-slot per-cubie-type additive bit deltas
+// (`delta_ud`, `delta_es`). That model is wrong on multi-move sequences
+// because the orientation flip depends on the cubie's *full current
+// rotation*, not just its (type, slot) pair. Under that model ~45% of
+// random 8-move scrambles produced odd EO parity (impossible in the real
+// cube), and the `(eo, udslice)` coord wasn't closed under moves so the
+// single-rep BFS visited only ~495 of 1,013,760 cells. Tracking the full
+// 24-element rotation per slot fixes both: the rotation transition is a
+// pure group-table lookup, and the bit is a faithful projection rather
+// than an independent piece of state.
 
 // ---- Pruning tables ----
 
@@ -195,57 +176,40 @@ impl PruningTables {
     }
 }
 
-/// Apply move `op` to the state described by joint coord `(eo, ud)` and
-/// return the resulting `(new_eo, new_ud)`. `(eo, ud)` jointly determines
-/// the cubie type at each slot, so this transition is well-defined without
-/// tracking the underlying permutation explicitly.
-fn step_eo_udslice(eo: u32, ud: u32, op: &EdgeMoveOp) -> (u32, u32) {
-    let src_mask = decode_udslice_mask(ud);
-    let src_orient = decode_eo(eo).orient;
-
-    // Build the new orient from the move's perm + per-slot deltas chosen by
-    // source-slot cubie type.
-    let mut new_orient = [0u8; 12];
-    let mut new_mask = [false; 12];
-    for d in 0..12 {
-        let s = op.perm[d] as usize;
-        let src_is_es = src_mask[s];
-        let delta = if src_is_es { op.delta_es[d] } else { op.delta_ud[d] };
-        new_orient[d] = (src_orient[s] + delta) % 2;
-        new_mask[d] = src_is_es;
-    }
-
-    let new_eo = encode_eo(&EdgeState { perm: [0; 12], orient: new_orient });
-    let new_ud = udslice_from_mask(&new_mask);
-    (new_eo, new_ud)
-}
-
-/// Build the Phase-1 `(eo, udslice)` pruning table by BFS in joint coord
-/// space. Starts from the goal `(eo=0, ud=N_UDSLICE-1)` and expands using
-/// all 18 face turns. Reaches every coord pair in the orbit (~half the joint
-/// space, gated by the EO sum-mod-2 invariant).
+/// Build the Phase-1 `(eo, udslice)` pruning table by BFS in full state
+/// space, memoizing the first-visit distance per `(eo, ud)` coord pair.
+/// Starts from solved and expands using all 18 face turns.
+///
+/// We BFS in full state space (rather than coord space) because the
+/// `(eo, udslice)` projection isn't a homomorphism — two states with the
+/// same coord can transition to different new coords. Indexing the
+/// memoization by coord still gives an admissible heuristic since we
+/// record min distance from goal across all reps.
 fn build_eo_udslice_pruning(tables: &MoveTables) -> Vec<u8> {
-    let goal_eo = 0u32;
-    let goal_ud = (N_UDSLICE - 1) as u32;
-    let goal_idx = goal_eo as usize * N_UDSLICE + goal_ud as usize;
+    let goal = State3x3::solved();
+    let goal_eo = encode_eo(&goal.edges) as usize;
+    let goal_ud = encode_udslice(&goal.edges) as usize;
+    let goal_idx = goal_eo * N_UDSLICE + goal_ud;
 
     let mut table = vec![UNVISITED; N_EO * N_UDSLICE];
     table[goal_idx] = 0;
-    let mut frontier: Vec<(u32, u32)> = vec![(goal_eo, goal_ud)];
-    let mut next: Vec<(u32, u32)> = Vec::new();
+    let mut frontier: Vec<State3x3> = vec![goal];
+    let mut next: Vec<State3x3> = Vec::new();
     let mut dist: u8 = 0;
     while !frontier.is_empty() {
-        for &(eo, ud) in &frontier {
+        for state in frontier.drain(..) {
             for op in &tables.edge_ops {
-                let (new_eo, new_ud) = step_eo_udslice(eo, ud, op);
-                let idx = new_eo as usize * N_UDSLICE + new_ud as usize;
+                let mut new_state = state;
+                new_state.edges = apply_edge_op(&new_state.edges, op);
+                let new_eo = encode_eo(&new_state.edges) as usize;
+                let new_ud = encode_udslice(&new_state.edges) as usize;
+                let idx = new_eo * N_UDSLICE + new_ud;
                 if table[idx] == UNVISITED {
                     table[idx] = dist + 1;
-                    next.push((new_eo, new_ud));
+                    next.push(new_state);
                 }
             }
         }
-        frontier.clear();
         std::mem::swap(&mut frontier, &mut next);
         dist += 1;
     }
