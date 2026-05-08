@@ -46,25 +46,43 @@ pub fn apply_corner_op(s: &CornerState, op: &CornerMoveOp) -> CornerState {
 /// the additive `delta_ud` / `delta_es` deltas in [`EdgeMoveOp`] match
 /// [`cube_core::edge_orient`] (axis-strict EO) on single-move sequences
 /// from solved, but they do **not** compose correctly across multi-move
-/// sequences for either axis-strict or Kociemba-standard EO. Whether a
-/// move flips a cubie's orientation bit depends on the cubie's *current*
-/// primary-axis direction, which the bit alone can't recover — but the
-/// delta model assumes a fixed flip per (slot, move, cubie type).
+/// sequences for any reasonable EO definition. The ground truth: an
+/// edge's orientation bit transition under a face move depends on the
+/// cubie's *full current orientation* (a 24-element rotation), not just
+/// (cubie type, move, slot). The additive bit-XOR model collapses that
+/// to a single bit and loses the dependency.
 ///
-/// Empirically this means: starting from a state read by
+/// Two empirical symptoms:
+///
+/// - **Parity isn't preserved.** Run any scramble of ≥ 2 random face
+///   moves through `apply_edge_op` starting from `EdgeState::solved`
+///   and check `sum(orient) % 2`. ~45% of random 8-move scrambles
+///   produce odd parity — impossible in the real cube state space,
+///   where every face turn flips an even number of edge orientations.
+/// - **`(eo, udslice)` projection isn't closed under moves.** Two
+///   real-cube states with the same `(eo, udslice)` coord can transition
+///   to different `(new_eo, new_udslice)` coords under the same face
+///   move, because the orientation flip depends on more state than the
+///   bit. The single-representative BFS from solved visits only ~495
+///   of the 1,013,760 cells before all reachable transitions become
+///   self-loops, leaving the heuristic table mostly empty.
+///
+/// Knock-on effect for the solver: starting from a state read by
 /// [`State3x3::from_cube`] on a `cube_core` cube scrambled by ≥ 2 face
 /// moves, applying the inverse via this function does not in general
-/// land at all-zeros orient, so the solver's `is_in_g1` check fails to
-/// recognize the natural Phase-1 ending. The Phase-1 IDA* search then
-/// has to find a different G1 endpoint in the (broken) `apply_edge_op`
-/// graph — possible but slow (minutes per scramble), and the resulting
-/// move sequence happens to still solve the cube via `cube_core`
-/// because permutations match.
+/// land at all-zeros orient, so the Phase-1 IDA* `is_in_g1` check fails
+/// to recognize the natural Phase-1 ending. The search has to find a
+/// different G1 endpoint in the (broken) `apply_edge_op` graph —
+/// possible in some cases but slow (minutes per scramble), and the
+/// resulting move sequence still solves the cube via `cube_core`
+/// because the permutation half of the move ops *is* correct.
 ///
-/// The fix is to replace the additive delta model with a precomputed
-/// `eo_move_table[eo_coord][move] → new_eo_coord` derived from
-/// `cube_core::Cube::apply` simulation on a canonical state per coord.
-/// That's M3 polish work — see plan §6.4.
+/// The fix replaces the additive delta model with full-state simulation:
+/// thread a real [`cube_core::Cube`] through the search and read EO
+/// back via [`State3x3::from_cube`] at each step, OR precompute
+/// `cube_move_table[full_state_hash][move] → new_full_state` by
+/// simulating moves on canonical reps. Either way it's a sizeable
+/// chunk of M3 polish — see plan §6.4 / §14.4.
 pub fn apply_edge_op(s: &EdgeState, op: &EdgeMoveOp) -> EdgeState {
     let mut new_perm = [0u8; 12];
     let mut new_orient = [0u8; 12];
