@@ -52,6 +52,9 @@ fn one_thousand_scrambles_all_solve() {
     }
 }
 
+/// 10K random scrambles all solve optimally. Each solve is a constant-time
+/// gradient descent on the full 3.5 MB distance table, so the whole batch
+/// runs in well under a second.
 #[test]
 fn ten_thousand_scrambles_all_solve_optimally() {
     let solver = shared_solver();

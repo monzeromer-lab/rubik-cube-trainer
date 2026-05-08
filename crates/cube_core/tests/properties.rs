@@ -120,6 +120,7 @@ proptest! {
 }
 
 /// 10,000-move stress test: §1 success criterion ("zero state corruption").
+/// Pure cube_core (no solver), so it runs in milliseconds even on debug.
 #[test]
 fn ten_thousand_moves_zero_corruption() {
     let mut rng = ChaCha8Rng::seed_from_u64(0xDEAD_BEEF);

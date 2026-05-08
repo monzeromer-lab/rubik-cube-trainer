@@ -121,13 +121,16 @@ impl Solver3x3 {
     fn phase1_heuristic(&self, state: &State3x3) -> u8 {
         let co = encode_co(&state.corners) as u16;
         let ud = encode_udslice(&state.edges) as u16;
-        // The (co, udslice) pair-pruning table fully covers its space and
-        // its values are exact BFS distances — admissible by construction.
-        // The (eo, udslice) and (co, eo) tables are sparse here (single
-        // representative per coord pair leaves many slots UNVISITED=255),
-        // so using them in `max` would over-estimate and break IDA*.
-        // M3 ships with the (co, udslice) heuristic only; tightening is
-        // tracked as an M15 polish item.
+        // The new (eo, udslice) joint coord-space BFS achieves full coverage
+        // (1,013,760 / 1,013,760 entries, max distance 19), but its delta
+        // model relies on `apply_edge_op`'s axis-strict EO definition which
+        // doesn't satisfy the Kociemba sum-mod-2 invariant under multi-move
+        // sequences (verified: `R U` produces orient sum 3, not 0). Using it
+        // as a heuristic over-estimates for legitimately-reachable mid-search
+        // states and breaks IDA* admissibility. Tracked as deeper M15 work:
+        // rebuild the solver's EO model on Kociemba-standard "G1-solvable
+        // bit" semantics so the per-move flip pattern is genuinely
+        // coord-only.
         self.pruning.p1_co_udslice_at(co, ud)
     }
 
@@ -313,13 +316,31 @@ mod tests {
         // Multi-move coverage is M15 polish — the (co, udslice)-only Phase-1
         // heuristic and loose Phase-2 pruning mean even 2-move scrambles
         // can take minutes today.
-        for scramble in ["R", "U", "F", "R'", "U2", "F'"] {
+        for scramble in ["R", "U", "F", "R'", "U'", "U2", "F'"] {
             let scr = MoveSeq::parse(scramble, 3).unwrap();
             let mut cube = Cube::solved(3).unwrap();
             cube.apply_seq(&scr).unwrap();
             let solution = s.solve(&cube).unwrap();
             cube.apply_seq(&solution).unwrap();
             assert!(cube.is_solved(), "scramble {scramble:?} → {solution:?} did not solve");
+        }
+    }
+
+    /// Multi-move 3×3 scrambles. Blocked on M3 perf — a true Kociemba-
+    /// standard EO model (rather than our axis-strict one) is needed before
+    /// the (eo, udslice) joint pruning can be admissible. Tracked for
+    /// deeper M15 work.
+    #[test]
+    #[ignore = "M15 polish: needs Kociemba-standard EO rewrite (current axis-strict EO breaks sum invariant under multi-move sequences, blocks tighter pruning)"]
+    fn solver_solves_multi_move_scrambles() {
+        let s = solver();
+        for scramble in ["R U", "R U R'", "U R U' R'"] {
+            let scr = MoveSeq::parse(scramble, 3).unwrap();
+            let mut cube = Cube::solved(3).unwrap();
+            cube.apply_seq(&scr).unwrap();
+            let solution = s.solve(&cube).unwrap();
+            cube.apply_seq(&solution).unwrap();
+            assert!(cube.is_solved(), "scramble {scramble:?} did not solve");
         }
     }
 
