@@ -222,6 +222,25 @@ impl Solver2x2 {
         Self { distances, move_ops }
     }
 
+    /// Same as [`Self::new`] but tries to load the distance table from
+    /// `cache_path` first. On any load error (missing file, bad magic,
+    /// version mismatch, size mismatch), builds from scratch and writes
+    /// the freshly built table to `cache_path` so the next launch is
+    /// fast. Move ops are always derived fresh (a few µs).
+    pub fn new_with_cache(cache_path: &std::path::Path) -> Self {
+        let move_ops = derive_move_ops();
+        let distances = match load_distance_cache(cache_path) {
+            Ok(d) => d,
+            Err(_) => {
+                let d = build_distance_table(&move_ops);
+                let _ = save_distance_cache(&d, cache_path);
+                d
+            }
+        };
+        debug_assert_eq!(distances[State2x2::solved().index() as usize], 0);
+        Self { distances, move_ops }
+    }
+
     /// True iff `state` lies in the orbit reachable from solved using R/U/F.
     pub fn is_reachable(&self, state: &State2x2) -> bool {
         self.distances[state.index() as usize] != u8::MAX
@@ -269,6 +288,73 @@ impl Default for Solver2x2 {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// ---- On-disk distance-table cache ----
+//
+// Same shape as the 3×3 cache (`crate::three::cache`): a magic prefix,
+// a `u32` version, then the length-prefixed `Vec<u8>` distance table.
+// The version is bumped whenever the state encoding or BFS rules
+// change so stale caches are rejected on load rather than silently
+// producing wrong solutions.
+
+const CACHE_MAGIC: &[u8; 8] = b"R2DIST\0\0";
+const CACHE_VERSION: u32 = 1;
+
+fn save_distance_cache(distances: &[u8], path: &std::path::Path) -> std::io::Result<()> {
+    use std::io::Write;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut tmp = path.to_path_buf();
+    tmp.set_extension("tmp");
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(CACHE_MAGIC)?;
+        f.write_all(&CACHE_VERSION.to_le_bytes())?;
+        f.write_all(&(distances.len() as u64).to_le_bytes())?;
+        f.write_all(distances)?;
+        f.flush()?;
+    }
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+fn load_distance_cache(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    let bytes = std::fs::read(path)?;
+    if bytes.len() < 8 + 4 + 8 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "cache file too short",
+        ));
+    }
+    if &bytes[..8] != CACHE_MAGIC {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "bad 2×2 cache magic",
+        ));
+    }
+    let version = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
+    if version != CACHE_VERSION {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("2×2 cache version {version} != expected {CACHE_VERSION}"),
+        ));
+    }
+    let len = u64::from_le_bytes(bytes[12..20].try_into().unwrap()) as usize;
+    if len != NUM_2X2_STATES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("2×2 cache size {len} != expected {NUM_2X2_STATES}"),
+        ));
+    }
+    if bytes.len() != 20 + len {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "2×2 cache truncated",
+        ));
+    }
+    Ok(bytes[20..].to_vec())
 }
 
 #[cfg(test)]

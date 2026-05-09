@@ -14,7 +14,7 @@
 //! that is pure-fn over `cube_core::Cube`. Full lesson content (the 8
 //! beginner lessons + CFOP) is content-authoring work for M11/M12 polish.
 
-use cube_core::{Color, Cube, Face, Facelets, MoveSeq};
+use cube_core::{Color, Cube, Face, Facelets};
 use serde::{Deserialize, Serialize};
 
 pub mod algs;

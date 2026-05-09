@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use bevy::prelude::*;
+use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use cube_core::{Face, Move, Turn};
 use cube_input::DragInputPlugin;
@@ -56,7 +57,24 @@ fn main() {
         .insert_resource(InputRng(ChaCha8Rng::seed_from_u64(0x00C0_FFEE)))
         .insert_resource(SolverCache::default())
         .insert_resource(DrillSelector::default())
-        .add_systems(Startup, setup_scene)
+        .init_resource::<SolverBuildState>()
+        .init_state::<AppState>()
+        .add_systems(Startup, (setup_scene, start_solver_prebuild))
+        // Solver prebuild runs regardless of state (the table-build
+        // shouldn't pause just because the user hasn't dismissed the
+        // menu yet).
+        .add_systems(Update, poll_solver_prebuild)
+        // Main-menu state: spawn the overlay on enter, despawn on exit,
+        // listen for Enter to start.
+        .add_systems(OnEnter(AppState::MainMenu), spawn_main_menu)
+        .add_systems(OnExit(AppState::MainMenu), despawn_main_menu)
+        .add_systems(
+            Update,
+            main_menu_input.run_if(in_state(AppState::MainMenu)),
+        )
+        // Gameplay systems only run while playing; HUD displays the
+        // cube and stats throughout, so cube rendering (in
+        // CubeRenderPlugin) is intentionally not gated.
         .add_systems(
             Update,
             (
@@ -66,7 +84,9 @@ fn main() {
                 keyboard_undo_redo,
                 trainer_keyboard_flow,
                 detect_solve_completion,
-            ),
+                playing_to_menu_input,
+            )
+                .run_if(in_state(AppState::Playing)),
         )
         .run();
 }
@@ -331,6 +351,83 @@ fn setup_scene(mut commands: Commands) {
 #[derive(Resource)]
 struct InputRng(ChaCha8Rng);
 
+/// Top-level app state — plan §5.1. Only the two essential states are
+/// modelled today (Trainer / Guide / SolutionPlayback / Settings /
+/// StickerInput will get their own variants as those screens land).
+/// `Playing` covers free-cube + speed-solve + drill flows; the menu is
+/// just a launchpad that gates input until the user dismisses it.
+#[derive(States, Default, Debug, Clone, PartialEq, Eq, Hash)]
+enum AppState {
+    #[default]
+    MainMenu,
+    Playing,
+}
+
+/// Marker for every entity that belongs to the main-menu overlay so
+/// `OnExit(MainMenu)` can despawn the whole tree in one query.
+#[derive(Component)]
+struct MainMenuRoot;
+
+fn spawn_main_menu(mut commands: Commands) {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(0.0),
+                left: Val::Px(0.0),
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.78)),
+            MainMenuRoot,
+        ))
+        .with_children(|p| {
+            p.spawn((
+                Text::new("Rubik's Trainer"),
+                TextFont { font_size: 56.0, ..default() },
+                TextColor(Color::srgb(1.0, 0.95, 0.6)),
+            ));
+            p.spawn((
+                Text::new("\nPress Enter to start"),
+                TextFont { font_size: 22.0, ..default() },
+                TextColor(Color::srgb(0.85, 0.85, 0.9)),
+            ));
+            p.spawn((
+                Text::new("\nF1 returns here from anywhere"),
+                TextFont { font_size: 14.0, ..default() },
+                TextColor(Color::srgb(0.55, 0.55, 0.6)),
+            ));
+        });
+}
+
+fn despawn_main_menu(mut commands: Commands, q: Query<Entity, With<MainMenuRoot>>) {
+    for e in &q {
+        commands.entity(e).despawn();
+    }
+}
+
+fn main_menu_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut next: ResMut<NextState<AppState>>,
+) {
+    if keys.just_pressed(KeyCode::Enter) {
+        next.set(AppState::Playing);
+    }
+}
+
+fn playing_to_menu_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut next: ResMut<NextState<AppState>>,
+) {
+    if keys.just_pressed(KeyCode::F1) {
+        next.set(AppState::MainMenu);
+    }
+}
+
 /// Active drill mode + the case currently being drilled. `current` is
 /// `Some` from the moment a drill case is dealt until completion records
 /// it into [`PerCaseStats`] (or the user abandons the solve).
@@ -360,6 +457,43 @@ struct SolverCache {
     five: Option<Solver5x5>,
 }
 
+/// Background-builds the 3×3 solver at app startup so the user doesn't
+/// hit the table-build pause on first `S` press. With the disk cache
+/// populated, this is a fast file-read; on first ever launch (cache
+/// miss), the build runs in a worker thread off the render thread, so
+/// the window stays responsive throughout.
+#[derive(Resource, Default)]
+struct SolverBuildState {
+    task: Option<Task<Solver3x3>>,
+    pub ready: bool,
+}
+
+fn start_solver_prebuild(mut state: ResMut<SolverBuildState>) {
+    let pool = AsyncComputeTaskPool::get();
+    let path = solver_cache_path();
+    let task = pool.spawn(async move { Solver3x3::new_with_cache(&path) });
+    state.task = Some(task);
+    info!("solver: 3×3 prebuild kicked off in the background");
+}
+
+fn poll_solver_prebuild(
+    mut state: ResMut<SolverBuildState>,
+    mut cache: ResMut<SolverCache>,
+) {
+    if state.ready {
+        return;
+    }
+    let Some(task) = state.task.as_mut() else {
+        return;
+    };
+    if let Some(solver) = block_on(future::poll_once(task)) {
+        cache.three = Some(solver);
+        state.task = None;
+        state.ready = true;
+        info!("solver: 3×3 ready");
+    }
+}
+
 /// Filesystem location for the 3×3 solver's pruning-table cache. Honours
 /// `$RUBIKS_CACHE_DIR` (override) → `$XDG_CACHE_HOME/rubiks-trainer` →
 /// `$HOME/.cache/rubiks-trainer` → `./.rubiks_cache` (cwd fallback).
@@ -368,7 +502,15 @@ struct SolverCache {
 /// load and rewritten — but the file *name* stays stable across versions
 /// because the format itself carries the version field.
 fn solver_cache_path() -> PathBuf {
-    let dir = if let Some(d) = std::env::var_os("RUBIKS_CACHE_DIR") {
+    solver_cache_dir().join("3x3_pruning.bin")
+}
+
+fn solver_2x2_cache_path() -> PathBuf {
+    solver_cache_dir().join("2x2_distance.bin")
+}
+
+fn solver_cache_dir() -> PathBuf {
+    if let Some(d) = std::env::var_os("RUBIKS_CACHE_DIR") {
         PathBuf::from(d)
     } else if let Some(d) = std::env::var_os("XDG_CACHE_HOME") {
         PathBuf::from(d).join("rubiks-trainer")
@@ -376,8 +518,7 @@ fn solver_cache_path() -> PathBuf {
         PathBuf::from(h).join(".cache").join("rubiks-trainer")
     } else {
         PathBuf::from(".rubiks_cache")
-    };
-    dir.join("3x3_pruning.bin")
+    }
 }
 
 /// `S`: solve the current cube. Picks the appropriate solver for the
@@ -396,19 +537,23 @@ fn keyboard_solve(
     let solution: Result<cube_core::MoveSeq, String> = match cube.size {
         2 => {
             if cache.two.is_none() {
-                info!("solver: building 2×2 distance table (one-time, ~1–2s)");
-                cache.two = Some(Solver2x2::new());
+                let path = solver_2x2_cache_path();
+                info!(
+                    "solver: loading/building 2×2 distance table (cache: {})",
+                    path.display()
+                );
+                cache.two = Some(Solver2x2::new_with_cache(&path));
             }
             cache.two.as_ref().unwrap().solve(cube).map_err(|e| e.to_string())
         }
         3 => {
             if cache.three.is_none() {
-                let path = solver_cache_path();
-                info!(
-                    "solver: loading/building 3×3 pruning tables (cache: {})",
-                    path.display()
+                // Prebuild hasn't finished yet — bail with a friendly
+                // message rather than blocking the render thread.
+                warn!(
+                    "solver: 3×3 still building tables in the background; try again in a second"
                 );
-                cache.three = Some(Solver3x3::new_with_cache(&path));
+                return;
             }
             cache.three.as_ref().unwrap().solve(cube).map_err(|e| e.to_string())
         }

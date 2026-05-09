@@ -12,7 +12,7 @@
 //! the kind of work that benefits from algdb.net cross-checking and a
 //! human review pass.
 
-use cube_core::{Cube, MoveSeq};
+use cube_core::MoveSeq;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AlgFamily {
@@ -281,6 +281,7 @@ pub const STARTER_ALGS: &[AlgEntry] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cube_core::Cube;
 
     /// Every algorithm's notation must parse, and applying the algorithm
     /// followed by its inverse to a solved cube must return to solved.

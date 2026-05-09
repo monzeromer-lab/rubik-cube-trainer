@@ -11,7 +11,7 @@ use bevy::prelude::*;
 use cube_render::{CubeRenderConfig, PendingMoves};
 use cube_trainer::{SessionStats, TimerPhase, TimerState};
 
-use crate::DrillSelector;
+use crate::{DrillSelector, SolverBuildState};
 
 pub struct HudPlugin;
 
@@ -197,6 +197,7 @@ const CONTROLS_HELP: &[&str] = &[
     "M  cycle drill mode        Ctrl+Z/Y  undo/redo      Backspace  reset",
     "U/D/L/R/F/B  face turn     Shift/Alt  inv/half      Space  scramble",
     "S  auto-solve              2/3/4/5  cube size       drag  turn/orbit",
+    "F1  back to main menu",
 ];
 
 fn format_ms(ms: u32) -> String {
@@ -330,14 +331,21 @@ fn update_stats(
 
 fn update_solver_hint(
     pending: Res<PendingMoves>,
+    solver: Res<SolverBuildState>,
     mut q: Query<&mut Text, With<HudSolverHintText>>,
 ) {
     let Ok(mut text) = q.single_mut() else { return };
-    let queued = pending.0.len();
-    let label = if queued > 0 {
-        format!("Queue: {queued} move{}", if queued == 1 { "" } else { "s" })
+    // Solver build status takes priority — until 3×3 is ready, S would
+    // bail with a warning, so the user wants to see "still building".
+    let label = if !solver.ready {
+        "Solver: building 3×3…".to_string()
     } else {
-        String::new()
+        let queued = pending.0.len();
+        if queued > 0 {
+            format!("Queue: {queued} move{}", if queued == 1 { "" } else { "s" })
+        } else {
+            String::new()
+        }
     };
     if text.0 != label {
         text.0 = label;
