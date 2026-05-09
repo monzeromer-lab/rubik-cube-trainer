@@ -257,6 +257,7 @@ pub fn start_solve(
 ) -> MoveSeq {
     let size = cube_state.cube.size;
     cube_state.cube = Cube::solved(size).expect("valid size");
+    cube_state.reset_history();
     let scramble = cube_core::wca_scramble(size, &mut rng.0);
     pending.0.clear();
     pending.enqueue_all(scramble.iter().copied());

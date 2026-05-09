@@ -224,6 +224,7 @@ pub fn start_drill(
 ) -> MoveSeq {
     let size = cube_state.cube.size;
     cube_state.cube = cube_core::Cube::solved(size).expect("valid size");
+    cube_state.reset_history();
     pending.0.clear();
     let setup_moves: Vec<Move> = case.setup.0.clone();
     pending.enqueue_all(setup_moves.iter().copied());

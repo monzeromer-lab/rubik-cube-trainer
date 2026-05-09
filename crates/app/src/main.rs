@@ -17,11 +17,17 @@ use bevy::prelude::*;
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
 use cube_core::{Face, Move, Turn};
 use cube_input::DragInputPlugin;
-use cube_render::{ActiveAnimation, CubeRenderConfig, CubeRenderPlugin, CubeState, PendingMoves};
+use cube_render::{
+    ActiveAnimation, CubeRenderConfig, CubeRenderPlugin, CubeState, MoveOrigin, NextCommitOrigin,
+    PendingMoves,
+};
 use cube_solver::{Solver2x2, Solver3x3, Solver4x4, Solver5x5};
 use cube_trainer::{
     SessionStats, SolveFlag, TimedSolve, TimerPhase, TimerState, TrainerPlugin, TrainerRng,
     start_solve,
+};
+use cube_trainer::drill::{
+    DrillCase, DrillMode, PerCaseStats, pick_drill_case, start_drill, starter_oll_cases,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -47,6 +53,7 @@ fn main() {
         .insert_resource(ClearColor(Color::srgb(0.55, 0.55, 0.6)))
         .insert_resource(InputRng(ChaCha8Rng::seed_from_u64(0x00C0_FFEE)))
         .insert_resource(SolverCache::default())
+        .insert_resource(DrillSelector::default())
         .add_systems(Startup, setup_scene)
         .add_systems(
             Update,
@@ -54,6 +61,7 @@ fn main() {
                 keyboard_size_switch,
                 keyboard_to_moves,
                 keyboard_solve,
+                keyboard_undo_redo,
                 trainer_keyboard_flow,
                 detect_solve_completion,
             ),
@@ -62,7 +70,8 @@ fn main() {
 }
 
 /// Keyboard shortcuts for the trainer flow:
-/// - `T`: start a new timed solve (scrambles the cube + begins inspection).
+/// - `T`: start a new timed solve in the current drill mode.
+/// - `M`: cycle drill mode (SpeedSolve ↔ OLL).
 /// - `Enter`: end inspection / begin solve (only valid in `Inspecting`).
 /// - `Escape`: abandon current solve, reset to idle.
 fn trainer_keyboard_flow(
@@ -71,10 +80,45 @@ fn trainer_keyboard_flow(
     mut state: ResMut<CubeState>,
     mut pending: ResMut<PendingMoves>,
     mut rng: ResMut<TrainerRng>,
+    mut selector: ResMut<DrillSelector>,
+    per_case: Res<PerCaseStats>,
 ) {
+    if keys.just_pressed(KeyCode::KeyM) {
+        selector.mode = next_drill_mode(selector.mode);
+        selector.current = None;
+        info!("trainer: mode = {}", selector.mode.label());
+    }
     if keys.just_pressed(KeyCode::KeyT) {
-        let scr = start_solve(&mut state, &mut pending, &mut timer, &mut rng);
-        info!("trainer: scramble started ({} moves) — inspection running", scr.len());
+        match selector.mode {
+            DrillMode::SpeedSolve => {
+                let scr = start_solve(&mut state, &mut pending, &mut timer, &mut rng);
+                selector.current = None;
+                info!(
+                    "trainer: scramble started ({} moves) — inspection running",
+                    scr.len()
+                );
+            }
+            DrillMode::Oll => {
+                let cases = starter_oll_cases();
+                if let Some(case) = pick_drill_case(&cases, &per_case, &mut rng.0) {
+                    let case = case.clone();
+                    start_drill(&case, &mut state, &mut pending, &mut timer);
+                    info!(
+                        "trainer: drill OLL — {} (alg: {})",
+                        case.display_name,
+                        case.canonical_algorithm.as_deref().unwrap_or("?")
+                    );
+                    selector.current = Some(case);
+                }
+            }
+            other => {
+                warn!(
+                    "trainer: drill mode {} has no case library yet",
+                    other.label()
+                );
+                selector.current = None;
+            }
+        }
     }
     if keys.just_pressed(KeyCode::Enter) {
         if timer.phase == TimerPhase::Inspecting {
@@ -89,7 +133,67 @@ fn trainer_keyboard_flow(
     }
     if keys.just_pressed(KeyCode::Escape) {
         timer.reset();
+        selector.current = None;
         info!("trainer: solve abandoned");
+    }
+}
+
+/// `Ctrl+Z` undoes the most recent committed move; `Ctrl+Y` (or
+/// `Ctrl+Shift+Z`) redoes one. Gated on an empty animation queue so the
+/// commit-time `NextCommitOrigin` is unambiguous: at most one move in
+/// flight at a time, with a known origin.
+fn keyboard_undo_redo(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut state: ResMut<CubeState>,
+    mut pending: ResMut<PendingMoves>,
+    active: Res<ActiveAnimation>,
+    mut origin: ResMut<NextCommitOrigin>,
+) {
+    let ctrl = keys.pressed(KeyCode::ControlLeft) || keys.pressed(KeyCode::ControlRight);
+    if !ctrl {
+        return;
+    }
+    if !pending.is_empty() || active.0.is_some() {
+        return;
+    }
+    let shift = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
+    let want_redo = keys.just_pressed(KeyCode::KeyY)
+        || (keys.just_pressed(KeyCode::KeyZ) && shift);
+    let want_undo = keys.just_pressed(KeyCode::KeyZ) && !shift;
+
+    if want_undo {
+        if let Some(m) = state.history.pop_back() {
+            state.redo_stack.push_back(m);
+            origin.0 = MoveOrigin::Undo;
+            pending.enqueue(m.inverse());
+            info!(
+                "undo (history={}, redo={})",
+                state.history.len(),
+                state.redo_stack.len()
+            );
+        }
+    } else if want_redo {
+        if let Some(m) = state.redo_stack.pop_back() {
+            state.history.push_back(m);
+            origin.0 = MoveOrigin::Redo;
+            pending.enqueue(m);
+            info!(
+                "redo (history={}, redo={})",
+                state.history.len(),
+                state.redo_stack.len()
+            );
+        }
+    }
+}
+
+/// Cycle through the drill modes that have case libraries today. PLL/F2L/
+/// LastLayer/Cross are listed in [`DrillMode`] but their case sets are
+/// future content work, so they're skipped here rather than presented as
+/// dead-end picks.
+fn next_drill_mode(current: DrillMode) -> DrillMode {
+    match current {
+        DrillMode::SpeedSolve => DrillMode::Oll,
+        _ => DrillMode::SpeedSolve,
     }
 }
 
@@ -99,6 +203,8 @@ fn detect_solve_completion(
     active: Res<ActiveAnimation>,
     mut timer: ResMut<TimerState>,
     mut stats: ResMut<SessionStats>,
+    mut per_case: ResMut<PerCaseStats>,
+    mut selector: ResMut<DrillSelector>,
 ) {
     if timer.phase != TimerPhase::Solving {
         return;
@@ -116,6 +222,16 @@ fn detect_solve_completion(
             time_ms: elapsed_ms,
             flag: SolveFlag::Ok,
         });
+        if let Some(case) = selector.current.take() {
+            per_case.record(&case.id, elapsed_ms);
+            info!(
+                "drill: {} = {} ms (n={}, avg={:?})",
+                case.id,
+                elapsed_ms,
+                per_case.count(&case.id),
+                per_case.average(&case.id),
+            );
+        }
         timer.finish();
         info!(
             "Solve recorded: {} ms (count={}, best={:?}, ao5={:?})",
@@ -196,6 +312,24 @@ fn setup_scene(mut commands: Commands) {
 
 #[derive(Resource)]
 struct InputRng(ChaCha8Rng);
+
+/// Active drill mode + the case currently being drilled. `current` is
+/// `Some` from the moment a drill case is dealt until completion records
+/// it into [`PerCaseStats`] (or the user abandons the solve).
+#[derive(Resource)]
+struct DrillSelector {
+    mode: DrillMode,
+    current: Option<DrillCase>,
+}
+
+impl Default for DrillSelector {
+    fn default() -> Self {
+        Self {
+            mode: DrillMode::SpeedSolve,
+            current: None,
+        }
+    }
+}
 
 /// Lazily-built solvers per size. Each is `None` until the user first
 /// presses `S` for a cube of that size — we don't pay the table-build
@@ -304,6 +438,7 @@ fn keyboard_to_moves(
     if keys.just_pressed(KeyCode::Backspace) {
         pending.0.clear();
         state.cube = cube_core::Cube::solved(state.cube.size).unwrap();
+        state.reset_history();
     }
 
     // Avoid 'unused' lint when running headless tests.

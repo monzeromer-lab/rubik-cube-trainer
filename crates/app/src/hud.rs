@@ -11,6 +11,8 @@ use bevy::prelude::*;
 use cube_render::{CubeRenderConfig, PendingMoves};
 use cube_trainer::{SessionStats, TimerPhase, TimerState};
 
+use crate::DrillSelector;
+
 pub struct HudPlugin;
 
 impl Plugin for HudPlugin {
@@ -191,10 +193,10 @@ fn spawn_hud(mut commands: Commands) {
 }
 
 const CONTROLS_HELP: &[&str] = &[
-    "T  scramble + inspect       Enter  begin solve       Esc  abandon",
-    "U/D/L/R/F/B  face turn    Shift+letter  inverse    Alt+letter  half",
-    "Space  random scramble    S  auto-solve            Backspace  reset",
-    "2/3/4/5  cube size         Left-drag  turn face    Right-drag  orbit",
+    "T  start solve / drill     Enter  begin solve       Esc  abandon",
+    "M  cycle drill mode        Ctrl+Z/Y  undo/redo      Backspace  reset",
+    "U/D/L/R/F/B  face turn     Shift/Alt  inv/half      Space  scramble",
+    "S  auto-solve              2/3/4/5  cube size       drag  turn/orbit",
 ];
 
 fn format_ms(ms: u32) -> String {
@@ -258,6 +260,7 @@ fn update_timer(
 fn update_phase_size(
     timer: Res<TimerState>,
     config: Res<CubeRenderConfig>,
+    selector: Res<DrillSelector>,
     mut q: Query<&mut Text, With<HudPhaseSizeText>>,
 ) {
     let Ok(mut text) = q.single_mut() else { return };
@@ -268,7 +271,15 @@ fn update_phase_size(
         TimerPhase::Finished => "Finished",
     };
     let s = config.size;
-    let label = format!("Cube {s}×{s} — {phase}");
+    // Capitalised mode label: "Speed-solve", "OLL", etc.
+    let mode_label = match selector.mode.label() {
+        "speed-solve" => "Speed-solve".to_string(),
+        other => other.to_uppercase(),
+    };
+    let label = match selector.current.as_ref() {
+        Some(case) => format!("Cube {s}×{s} — {mode_label} — {phase}\n{}", case.display_name),
+        None => format!("Cube {s}×{s} — {mode_label} — {phase}"),
+    };
     if text.0 != label {
         text.0 = label;
     }

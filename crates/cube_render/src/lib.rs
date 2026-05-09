@@ -43,21 +43,60 @@ pub const LATTICE_SCALE: f32 = 0.5;
 pub const DEFAULT_ANIM_DURATION: f32 = 0.12;
 
 /// The Bevy resource holding the live cube state.
+///
+/// `history` records every move that's been logically committed to `cube`
+/// (in commit order) up to [`Self::MAX_HISTORY`]. `redo_stack` holds moves
+/// that have been undone — its top is the most-recently-undone move. Both
+/// stacks are managed in [`tick_animation`] (for normal user moves) and
+/// in the app's undo/redo handler (for Ctrl+Z / Ctrl+Y).
 #[derive(Resource, Debug, Clone)]
 pub struct CubeState {
     pub cube: Cube,
+    pub history: VecDeque<Move>,
+    pub redo_stack: VecDeque<Move>,
 }
 
 impl CubeState {
+    /// Cap history depth. A WCA scramble + typical solve is < 100 moves,
+    /// so 1024 lets the user reach back through several solves before
+    /// the oldest entries get rotated out. Keeps memory bounded.
+    pub const MAX_HISTORY: usize = 1024;
+
     pub fn new(cube: Cube) -> Self {
-        Self { cube }
+        Self {
+            cube,
+            history: VecDeque::new(),
+            redo_stack: VecDeque::new(),
+        }
     }
 
     pub fn solved(size: u8) -> Self {
-        Self {
-            cube: Cube::solved(size).expect("size in 2..=5"),
-        }
+        Self::new(Cube::solved(size).expect("size in 2..=5"))
     }
+
+    /// Drop both stacks. Call this whenever the cube is reset to a fresh
+    /// state (size switch, scramble setup, drill setup) — keeping stale
+    /// history around would let undo desync from the visible cube.
+    pub fn reset_history(&mut self) {
+        self.history.clear();
+        self.redo_stack.clear();
+    }
+}
+
+/// Origin of the next move to be committed by [`tick_animation`]. Default
+/// is `User` — which causes the commit to push to history and clear the
+/// redo stack. The undo/redo handler sets this to `Undo`/`Redo` before
+/// enqueueing, having already updated the stacks itself; the commit then
+/// skips its own bookkeeping.
+#[derive(Resource, Debug, Default, Clone, Copy)]
+pub struct NextCommitOrigin(pub MoveOrigin);
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum MoveOrigin {
+    #[default]
+    User,
+    Undo,
+    Redo,
 }
 
 #[derive(Resource, Debug, Clone, Copy)]
@@ -156,6 +195,7 @@ impl Plugin for CubeRenderPlugin {
             .init_resource::<CubeRenderConfig>()
             .init_resource::<PendingMoves>()
             .init_resource::<ActiveAnimation>()
+            .init_resource::<NextCommitOrigin>()
             .add_systems(
                 Update,
                 (
@@ -208,6 +248,7 @@ pub fn ensure_cube_built(
     let cube_state = Cube::solved(config.size).expect("valid size");
     spawn_cube_entities(&mut commands, &mut meshes, &mut materials, &cube_state);
     state.cube = cube_state;
+    state.reset_history();
 }
 
 fn spawn_cube_entities(
@@ -279,6 +320,7 @@ pub fn tick_animation(
     time: Res<Time>,
     mut active: ResMut<ActiveAnimation>,
     mut state: ResMut<CubeState>,
+    mut origin: ResMut<NextCommitOrigin>,
     mut query: Query<(&CubiePiece, &mut Transform)>,
 ) {
     let Some(mut anim) = active.0.take() else {
@@ -319,7 +361,21 @@ pub fn tick_animation(
         // Atomic logical commit. `sync_cubie_transforms` handles the snap
         // next frame because `state` is now `is_changed`.
         let _ = state.cube.apply(anim.move_data);
-        // active stays None.
+        match origin.0 {
+            MoveOrigin::User => {
+                state.history.push_back(anim.move_data);
+                if state.history.len() > CubeState::MAX_HISTORY {
+                    state.history.pop_front();
+                }
+                state.redo_stack.clear();
+            }
+            MoveOrigin::Undo | MoveOrigin::Redo => {
+                // Stack bookkeeping was done by the undo/redo handler at
+                // enqueue time. Reset to default for the next move.
+            }
+        }
+        origin.0 = MoveOrigin::User;
+        active.0 = None;
     } else {
         active.0 = Some(anim);
     }
@@ -510,6 +566,7 @@ mod tests {
         app.insert_resource(CubeRenderConfig { size: 3, animation_duration: 0.0 });
         app.init_resource::<PendingMoves>();
         app.init_resource::<ActiveAnimation>();
+        app.init_resource::<NextCommitOrigin>();
         app.insert_resource(CubeState::solved(3));
         app.add_systems(
             Update,
@@ -552,6 +609,114 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
+    /// User moves are recorded into `history` at commit time, and the redo
+    /// stack is cleared. Verifies the default `NextCommitOrigin::User`
+    /// path inside `tick_animation`.
+    #[test]
+    fn user_moves_are_recorded_to_history_in_commit_order() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.add_plugins(bevy::asset::AssetPlugin::default());
+        app.init_asset::<Mesh>();
+        app.init_asset::<StandardMaterial>();
+        app.insert_resource(CubeRenderConfig { size: 3, animation_duration: 0.0 });
+        app.init_resource::<PendingMoves>();
+        app.init_resource::<ActiveAnimation>();
+        app.init_resource::<NextCommitOrigin>();
+        app.insert_resource(CubeState::solved(3));
+        app.add_systems(
+            Update,
+            (start_animation, tick_animation, sync_cubie_transforms).chain(),
+        );
+
+        // Pre-populate redo_stack so we can confirm the User commit clears it.
+        {
+            let mut state = app.world_mut().resource_mut::<CubeState>();
+            state.redo_stack.push_back(Move::face(Face::F, Turn::Half));
+        }
+
+        let moves = [
+            Move::face(Face::R, Turn::Cw),
+            Move::face(Face::U, Turn::Ccw),
+            Move::face(Face::L, Turn::Half),
+        ];
+        {
+            let mut pending = app.world_mut().resource_mut::<PendingMoves>();
+            for m in moves.iter().copied() {
+                pending.enqueue(m);
+            }
+        }
+        for _ in 0..50 {
+            app.update();
+            if app.world().resource::<PendingMoves>().is_empty()
+                && app.world().resource::<ActiveAnimation>().0.is_none()
+            {
+                break;
+            }
+        }
+
+        let state = app.world().resource::<CubeState>();
+        assert_eq!(state.history.len(), 3);
+        assert_eq!(state.history[0], moves[0]);
+        assert_eq!(state.history[2], moves[2]);
+        assert!(state.redo_stack.is_empty());
+    }
+
+    /// When the next commit's origin is `Undo` or `Redo`, `tick_animation`
+    /// must not touch history or redo (the handler already updated them
+    /// at enqueue time) and must reset origin to `User` after the commit.
+    #[test]
+    fn undo_origin_commit_skips_history_bookkeeping_and_resets_origin() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.add_plugins(bevy::asset::AssetPlugin::default());
+        app.init_asset::<Mesh>();
+        app.init_asset::<StandardMaterial>();
+        app.insert_resource(CubeRenderConfig { size: 3, animation_duration: 0.0 });
+        app.init_resource::<PendingMoves>();
+        app.init_resource::<ActiveAnimation>();
+        app.init_resource::<NextCommitOrigin>();
+        app.insert_resource(CubeState::solved(3));
+        app.add_systems(
+            Update,
+            (start_animation, tick_animation, sync_cubie_transforms).chain(),
+        );
+
+        // Pre-set state as if an undo handler had just run: history with
+        // R already popped, redo holds R, pending holds R'.
+        let r = Move::face(Face::R, Turn::Cw);
+        {
+            let mut state = app.world_mut().resource_mut::<CubeState>();
+            state.redo_stack.push_back(r);
+        }
+        {
+            let mut origin = app.world_mut().resource_mut::<NextCommitOrigin>();
+            origin.0 = MoveOrigin::Undo;
+        }
+        {
+            let mut pending = app.world_mut().resource_mut::<PendingMoves>();
+            pending.enqueue(r.inverse());
+        }
+        for _ in 0..10 {
+            app.update();
+            if app.world().resource::<PendingMoves>().is_empty()
+                && app.world().resource::<ActiveAnimation>().0.is_none()
+            {
+                break;
+            }
+        }
+
+        let state = app.world().resource::<CubeState>();
+        // Commit must not have pushed R' to history nor cleared redo.
+        assert!(state.history.is_empty(), "history was modified by Undo commit");
+        assert_eq!(state.redo_stack.len(), 1, "redo was cleared by Undo commit");
+        // Origin must be back to User for the next move.
+        assert_eq!(
+            app.world().resource::<NextCommitOrigin>().0,
+            MoveOrigin::User
+        );
+    }
+
     /// With a non-zero animation duration, a single move requires several
     /// frames to complete, and the logical `CubeState` only changes after
     /// the elapsed time crosses the duration threshold.
@@ -567,6 +732,7 @@ mod tests {
         app.insert_resource(CubeRenderConfig { size: 3, animation_duration: 0.5 });
         app.init_resource::<PendingMoves>();
         app.init_resource::<ActiveAnimation>();
+        app.init_resource::<NextCommitOrigin>();
         app.insert_resource(CubeState::solved(3));
         app.add_systems(
             Update,
@@ -628,6 +794,7 @@ mod tests {
         app.init_resource::<CubeRenderConfig>();
         app.init_resource::<PendingMoves>();
         app.init_resource::<ActiveAnimation>();
+        app.init_resource::<NextCommitOrigin>();
         // Match the plugin: pre-insert CubeState so ensure_cube_built can
         // read it as ResMut without panicking.
         app.insert_resource(CubeState::solved(3));
@@ -682,6 +849,7 @@ mod tests {
         app.insert_resource(CubeRenderConfig { size: 4, animation_duration: 0.0 });
         app.init_resource::<PendingMoves>();
         app.init_resource::<ActiveAnimation>();
+        app.init_resource::<NextCommitOrigin>();
         app.insert_resource(CubeState::solved(4));
         app.add_systems(
             Update,
