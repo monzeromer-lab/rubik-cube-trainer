@@ -171,6 +171,12 @@ impl Solver4x4 {
         Self { solver_3x3: Solver3x3::new() }
     }
 
+    /// Mirror of [`Solver3x3::new_with_cache`] — disk-caches the inner
+    /// 3×3's pruning tables. The 4×4 itself has no extra heavy tables.
+    pub fn new_with_cache(cache_path: &std::path::Path) -> Self {
+        Self { solver_3x3: Solver3x3::new_with_cache(cache_path) }
+    }
+
     pub fn solve(&self, cube: &Cube) -> Result<MoveSeq, Solve4x4Error> {
         if cube.size != 4 {
             return Err(Solve4x4Error::WrongSize(cube.size));

@@ -311,24 +311,25 @@ mod tests {
     use super::*;
 
     /// The classic case: pick the URF cubie's R-face sticker (world face
-    /// = +X), drag toward the back of the cube (–Z direction). On a 3×3
-    /// this should resolve to U-cw (URF → UBR moves in –Z).
+    /// = +X), drag toward the back of the cube (–Z direction). Under WCA
+    /// "CW from outside" convention U-cw cycles UFR → ULF → UBL → UBR
+    /// (URF moves in –X), so the move that pushes URF in –Z is U-ccw.
     #[test]
-    fn drag_back_on_urf_r_sticker_is_u_cw() {
+    fn drag_back_on_urf_r_sticker_is_u_ccw() {
         let move_data = decide_move(IVec3::X, IVec3::new(2, 2, 2), -Vec3::Z, 3).unwrap();
         assert_eq!(move_data.face, Face::U);
-        assert_eq!(move_data.turn, Turn::Cw);
+        assert_eq!(move_data.turn, Turn::Ccw);
         assert_eq!(move_data.depth, 1);
         assert!(!move_data.wide);
     }
 
     #[test]
-    fn drag_down_on_urf_r_sticker_is_f_ccw() {
+    fn drag_down_on_urf_r_sticker_is_f_cw() {
         // Chosen axis = Y; OTHER axis = Z. Cubie z=+2 → slice F.
-        // F-ccw moves URF (2,2,2) to DFR (2,-2,2): direction –Y. ✓
+        // F-cw cycles UFR → DFR (URF (2,2,2) → (2,-2,2)): drag direction –Y.
         let m = decide_move(IVec3::X, IVec3::new(2, 2, 2), -Vec3::Y, 3).unwrap();
         assert_eq!(m.face, Face::F);
-        assert_eq!(m.turn, Turn::Ccw);
+        assert_eq!(m.turn, Turn::Cw);
     }
 
     #[test]

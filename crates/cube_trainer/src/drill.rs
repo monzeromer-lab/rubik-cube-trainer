@@ -157,61 +157,53 @@ pub fn pick_drill_case<'a, R: Rng + ?Sized>(
     candidates.last()
 }
 
-/// A small starter library of OLL cases. Real M11 work fills out all 57.
-/// Each setup is the inverse of the case's algorithm — applied to a
-/// post-F2L state, the cube ends up in the recognition pattern.
+/// OLL drill cases derived from the verified `STARTER_ALGS` library in
+/// [`cube_guides::algs`]. Each setup is the inverse of the canonical
+/// algorithm — applied to a solved cube it places the cube in the OLL
+/// recognition state. Mirrors [`starter_pll_cases`] so adding an OLL to
+/// the alg library automatically expands drill coverage.
 pub fn starter_oll_cases() -> Vec<DrillCase> {
-    vec![
-        DrillCase {
-            id: "oll-21-h".into(),
-            mode: DrillMode::Oll,
-            display_name: "OLL 21 (H)".into(),
-            setup: MoveSeq::parse(
-                "R U R' U R U' R' U R U2 R'",
-                3,
-            )
-            .expect("hard-coded setup parses"),
-            canonical_algorithm: Some("R U2 R' U' R U R' U' R U' R'".into()),
-        },
-        DrillCase {
-            id: "oll-22-pi".into(),
-            mode: DrillMode::Oll,
-            display_name: "OLL 22 (Pi)".into(),
-            setup: MoveSeq::parse(
-                "R' F R U R' U' F' U R",
-                3,
-            )
-            .expect("hard-coded setup parses"),
-            canonical_algorithm: Some("R U2 R2 U' R2 U' R2 U2 R".into()),
-        },
-        DrillCase {
-            id: "oll-27-sune".into(),
-            mode: DrillMode::Oll,
-            display_name: "OLL 27 (Sune)".into(),
-            setup: MoveSeq::parse("R' U' R U' R' U2 R", 3)
-                .expect("hard-coded setup parses"),
-            canonical_algorithm: Some("R U R' U R U2 R'".into()),
-        },
-        DrillCase {
-            id: "oll-26-anti-sune".into(),
-            mode: DrillMode::Oll,
-            display_name: "OLL 26 (Anti-Sune)".into(),
-            setup: MoveSeq::parse("R U2 R' U' R U' R'", 3)
-                .expect("hard-coded setup parses"),
-            canonical_algorithm: Some("R U2 R' U' R U' R'".into()),
-        },
-        DrillCase {
-            id: "oll-23-h-cross".into(),
-            mode: DrillMode::Oll,
-            display_name: "OLL 23 (H-cross)".into(),
-            setup: MoveSeq::parse(
-                "R2 D' R U2 R' D R U2 R",
-                3,
-            )
-            .expect("hard-coded setup parses"),
-            canonical_algorithm: Some("R2 D R' U2 R D' R' U2 R'".into()),
-        },
-    ]
+    use cube_guides::algs::{AlgFamily, STARTER_ALGS};
+    STARTER_ALGS
+        .iter()
+        .filter(|e| e.family == AlgFamily::Oll)
+        .map(|e| {
+            let alg = e.parse();
+            DrillCase {
+                id: e.id.into(),
+                mode: DrillMode::Oll,
+                display_name: e.display_name.into(),
+                setup: alg.inverse(),
+                canonical_algorithm: Some(e.notation.into()),
+            }
+        })
+        .collect()
+}
+
+/// PLL cases derived from the verified `STARTER_ALGS` library in
+/// [`cube_guides::algs`]. Only the algorithms that round-trip cleanly
+/// against the current simulator are included — full 21-PLL coverage
+/// is gated on the alg-library verification pass tracked in §7.4.
+///
+/// Each case's `setup` is the inverse of the canonical algorithm, so
+/// applying the setup to a solved cube places it in the recognition
+/// state the user will then drill.
+pub fn starter_pll_cases() -> Vec<DrillCase> {
+    use cube_guides::algs::{AlgFamily, STARTER_ALGS};
+    STARTER_ALGS
+        .iter()
+        .filter(|e| e.family == AlgFamily::Pll)
+        .map(|e| {
+            let alg = e.parse();
+            DrillCase {
+                id: e.id.into(),
+                mode: DrillMode::Pll,
+                display_name: e.display_name.into(),
+                setup: alg.inverse(),
+                canonical_algorithm: Some(e.notation.into()),
+            }
+        })
+        .collect()
 }
 
 /// Variant of [`crate::start_solve`] for a specific drill case. Resets
@@ -319,6 +311,34 @@ mod tests {
         assert!(!cases.is_empty());
         for c in &cases {
             assert!(!c.setup.is_empty(), "{} has empty setup", c.id);
+        }
+    }
+
+    /// Setup + canonical algorithm must return a solved cube to solved.
+    /// Mirrors the `every_alg_round_trips_with_its_inverse` invariant in
+    /// `cube_guides::algs::tests`, but exercised through the drill API
+    /// so we catch any data-flow break between the alg library and the
+    /// drill case constructor.
+    #[test]
+    fn starter_pll_cases_have_self_inverse_setup_alg_pairs() {
+        use cube_core::{Cube, MoveSeq};
+        let cases = starter_pll_cases();
+        assert!(
+            !cases.is_empty(),
+            "no PLL cases pulled from STARTER_ALGS — alg library empty?"
+        );
+        for c in &cases {
+            assert_eq!(c.mode, DrillMode::Pll);
+            let alg_str = c.canonical_algorithm.as_deref().expect("canonical alg");
+            let alg = MoveSeq::parse(alg_str, 3).expect("alg parses");
+            let mut cube = Cube::solved(3).expect("solved 3x3");
+            cube.apply_seq(&c.setup).expect("setup applies");
+            cube.apply_seq(&alg).expect("alg applies");
+            assert!(
+                cube.is_solved(),
+                "{}: setup + algorithm did not return to solved",
+                c.id
+            );
         }
     }
 }

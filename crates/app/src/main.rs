@@ -11,6 +11,7 @@
 //!   (2×2/3×3/4×4). First press builds tables and may pause the UI for a
 //!   few seconds; subsequent presses are instant.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use bevy::prelude::*;
@@ -28,6 +29,7 @@ use cube_trainer::{
 };
 use cube_trainer::drill::{
     DrillCase, DrillMode, PerCaseStats, pick_drill_case, start_drill, starter_oll_cases,
+    starter_pll_cases,
 };
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -111,6 +113,19 @@ fn trainer_keyboard_flow(
                     selector.current = Some(case);
                 }
             }
+            DrillMode::Pll => {
+                let cases = starter_pll_cases();
+                if let Some(case) = pick_drill_case(&cases, &per_case, &mut rng.0) {
+                    let case = case.clone();
+                    start_drill(&case, &mut state, &mut pending, &mut timer);
+                    info!(
+                        "trainer: drill PLL — {} (alg: {})",
+                        case.display_name,
+                        case.canonical_algorithm.as_deref().unwrap_or("?")
+                    );
+                    selector.current = Some(case);
+                }
+            }
             other => {
                 warn!(
                     "trainer: drill mode {} has no case library yet",
@@ -186,13 +201,16 @@ fn keyboard_undo_redo(
     }
 }
 
-/// Cycle through the drill modes that have case libraries today. PLL/F2L/
+/// Cycle through the drill modes that have case libraries today. F2L/
 /// LastLayer/Cross are listed in [`DrillMode`] but their case sets are
 /// future content work, so they're skipped here rather than presented as
-/// dead-end picks.
+/// dead-end picks. PLL covers only the three algorithms that round-trip
+/// cleanly against the current simulator (Aa, H, Ua) — the remaining 18
+/// PLLs are gated on the alg-library verification pass (plan §7.4).
 fn next_drill_mode(current: DrillMode) -> DrillMode {
     match current {
         DrillMode::SpeedSolve => DrillMode::Oll,
+        DrillMode::Oll => DrillMode::Pll,
         _ => DrillMode::SpeedSolve,
     }
 }
@@ -342,6 +360,26 @@ struct SolverCache {
     five: Option<Solver5x5>,
 }
 
+/// Filesystem location for the 3×3 solver's pruning-table cache. Honours
+/// `$RUBIKS_CACHE_DIR` (override) → `$XDG_CACHE_HOME/rubiks-trainer` →
+/// `$HOME/.cache/rubiks-trainer` → `./.rubiks_cache` (cwd fallback).
+/// Filename is versioned in [`cube_solver::three::cache::CACHE_VERSION`]
+/// so a stale file from an incompatible build is cheaply rejected on
+/// load and rewritten — but the file *name* stays stable across versions
+/// because the format itself carries the version field.
+fn solver_cache_path() -> PathBuf {
+    let dir = if let Some(d) = std::env::var_os("RUBIKS_CACHE_DIR") {
+        PathBuf::from(d)
+    } else if let Some(d) = std::env::var_os("XDG_CACHE_HOME") {
+        PathBuf::from(d).join("rubiks-trainer")
+    } else if let Some(h) = std::env::var_os("HOME") {
+        PathBuf::from(h).join(".cache").join("rubiks-trainer")
+    } else {
+        PathBuf::from(".rubiks_cache")
+    };
+    dir.join("3x3_pruning.bin")
+}
+
 /// `S`: solve the current cube. Picks the appropriate solver for the
 /// current size, building it on first press. Solution moves are pushed to
 /// [`PendingMoves`] so the renderer animates each turn.
@@ -365,22 +403,34 @@ fn keyboard_solve(
         }
         3 => {
             if cache.three.is_none() {
-                info!("solver: building 3×3 pruning tables (one-time, ~few seconds)");
-                cache.three = Some(Solver3x3::new());
+                let path = solver_cache_path();
+                info!(
+                    "solver: loading/building 3×3 pruning tables (cache: {})",
+                    path.display()
+                );
+                cache.three = Some(Solver3x3::new_with_cache(&path));
             }
             cache.three.as_ref().unwrap().solve(cube).map_err(|e| e.to_string())
         }
         4 => {
             if cache.four.is_none() {
-                info!("solver: building 4×4 (incl. inner 3×3 tables, one-time, ~few seconds)");
-                cache.four = Some(Solver4x4::new());
+                let path = solver_cache_path();
+                info!(
+                    "solver: loading/building 4×4 (inner 3×3 cache: {})",
+                    path.display()
+                );
+                cache.four = Some(Solver4x4::new_with_cache(&path));
             }
             cache.four.as_ref().unwrap().solve(cube).map_err(|e| e.to_string())
         }
         5 => {
             if cache.five.is_none() {
-                info!("solver: building 5×5 (incl. inner 3×3 tables, one-time, ~few seconds)");
-                cache.five = Some(Solver5x5::new());
+                let path = solver_cache_path();
+                info!(
+                    "solver: loading/building 5×5 (inner 3×3 cache: {})",
+                    path.display()
+                );
+                cache.five = Some(Solver5x5::new_with_cache(&path));
             }
             cache.five.as_ref().unwrap().solve(cube).map_err(|e| e.to_string())
         }

@@ -9,6 +9,7 @@ description = "Speedcubing trainer: timer state machine, WCA scrambles, session 
 [dependencies]
 bevy = { workspace = true, default-features = false, features = ["bevy_state"] }
 cube_core = { path = "../cube_core" }
+cube_guides = { path = "../cube_guides" }
 cube_render = { path = "../cube_render" }
 serde = { workspace = true }
 rand = { workspace = true }

@@ -153,6 +153,12 @@ impl Solver5x5 {
         Self { solver_3x3: Solver3x3::new() }
     }
 
+    /// Mirror of [`Solver3x3::new_with_cache`] — disk-caches the inner
+    /// 3×3's pruning tables. The 5×5 itself has no extra heavy tables.
+    pub fn new_with_cache(cache_path: &std::path::Path) -> Self {
+        Self { solver_3x3: Solver3x3::new_with_cache(cache_path) }
+    }
+
     pub fn solve(&self, cube: &Cube) -> Result<MoveSeq, Solve5x5Error> {
         if cube.size != 5 {
             return Err(Solve5x5Error::WrongSize(cube.size));

@@ -71,6 +71,54 @@ pub const STARTER_ALGS: &[AlgEntry] = &[
         family: AlgFamily::Oll,
         notation: "R U2 R2 U' R2 U' R2 U2 R",
     },
+    AlgEntry {
+        id: "oll-33-t",
+        display_name: "OLL 33 (T)",
+        family: AlgFamily::Oll,
+        notation: "R U R' U' R' F R F'",
+    },
+    AlgEntry {
+        id: "oll-37-fish",
+        display_name: "OLL 37 (Fish)",
+        family: AlgFamily::Oll,
+        notation: "F R' F' R U R U' R'",
+    },
+    AlgEntry {
+        id: "oll-38",
+        display_name: "OLL 38",
+        family: AlgFamily::Oll,
+        notation: "R U R' U R U' R' U' R' F R F'",
+    },
+    AlgEntry {
+        id: "oll-44-p",
+        display_name: "OLL 44 (P)",
+        family: AlgFamily::Oll,
+        notation: "F U R U' R' F'",
+    },
+    AlgEntry {
+        id: "oll-45-t",
+        display_name: "OLL 45 (T)",
+        family: AlgFamily::Oll,
+        notation: "F R U R' U' F'",
+    },
+    AlgEntry {
+        id: "oll-48",
+        display_name: "OLL 48",
+        family: AlgFamily::Oll,
+        notation: "F R U R' U' R U R' U' F'",
+    },
+    AlgEntry {
+        id: "oll-51",
+        display_name: "OLL 51",
+        family: AlgFamily::Oll,
+        notation: "F U R U' R' U R U' R' F'",
+    },
+    AlgEntry {
+        id: "oll-56",
+        display_name: "OLL 56",
+        family: AlgFamily::Oll,
+        notation: "R U R' U R U' R' U R U2 R'",
+    },
     // --- PLL last-layer cases ---
     AlgEntry {
         id: "pll-aa",
@@ -90,13 +138,118 @@ pub const STARTER_ALGS: &[AlgEntry] = &[
         family: AlgFamily::Pll,
         notation: "R U' R U R U R U' R' U' R2",
     },
-    // M15 polish: T-perm, Y-perm, Ja/Jb, F-perm fail the
-    // pll_algorithms_preserve_first_two_layers test under the current
-    // simulator. The Sune-family OLLs and the Aa/H/Ua PLLs above pass,
-    // so it's something subtle in those longer algorithms' interaction
-    // with our parser/apply path. Tracked for the M15 alg-library
-    // verification pass (cross-check against algdb.net + dive into the
-    // first-failing move).
+    AlgEntry {
+        id: "pll-u-b",
+        display_name: "U-perm (b)",
+        family: AlgFamily::Pll,
+        notation: "R2 U R U R' U' R' U' R' U R'",
+    },
+    AlgEntry {
+        id: "pll-ab",
+        display_name: "Ab-perm",
+        family: AlgFamily::Pll,
+        notation: "x R2 D2 R U R' D2 R U' R x'",
+    },
+    AlgEntry {
+        id: "pll-z",
+        display_name: "Z-perm",
+        family: AlgFamily::Pll,
+        notation: "M2 U M2 U M' U2 M2 U2 M'",
+    },
+    AlgEntry {
+        id: "pll-t",
+        display_name: "T-perm",
+        family: AlgFamily::Pll,
+        notation: "R U R' U' R' F R2 U' R' U' R U R' F'",
+    },
+    AlgEntry {
+        id: "pll-ja",
+        display_name: "Ja-perm",
+        family: AlgFamily::Pll,
+        notation: "R' U L' U2 R U' R' U2 R L",
+    },
+    AlgEntry {
+        id: "pll-jb",
+        display_name: "Jb-perm",
+        family: AlgFamily::Pll,
+        notation: "R U R' F' R U R' U' R' F R2 U' R'",
+    },
+    AlgEntry {
+        id: "pll-f",
+        display_name: "F-perm",
+        family: AlgFamily::Pll,
+        notation: "R' U' F' R U R' U' R' F R2 U' R' U' R U R' U R",
+    },
+    AlgEntry {
+        id: "pll-y",
+        display_name: "Y-perm",
+        family: AlgFamily::Pll,
+        notation: "F R U' R' U' R U R' F' R U R' U' R' F R F'",
+    },
+    AlgEntry {
+        id: "pll-v",
+        display_name: "V-perm",
+        family: AlgFamily::Pll,
+        // Speed-solving notation usually drops the closing `y'` since the
+        // user doesn't mind the cube ending rotated; the closing `y'` is
+        // appended here so the alg leaves the cube in its starting frame
+        // (no net AUF), matching the bottom-two-layers test invariant.
+        notation: "R' U R' U' y R' F' R2 U' R' U R' F R F y'",
+    },
+    AlgEntry {
+        id: "pll-na",
+        display_name: "Na-perm",
+        family: AlgFamily::Pll,
+        notation: "R U R' U R U R' F' R U R' U' R' F R2 U' R' U2 R U' R'",
+    },
+    AlgEntry {
+        id: "pll-nb",
+        display_name: "Nb-perm",
+        family: AlgFamily::Pll,
+        notation: "R' U R U' R' F' U' F R U R' F R' F' R U' R",
+    },
+    AlgEntry {
+        id: "pll-e",
+        display_name: "E-perm",
+        family: AlgFamily::Pll,
+        notation: "x' L' U L D' L' U' L D L' U' L D' L' U L D x",
+    },
+    AlgEntry {
+        id: "pll-ra",
+        display_name: "Ra-perm",
+        family: AlgFamily::Pll,
+        notation: "R U' R' U' R U R D R' U' R D' R' U2 R'",
+    },
+    AlgEntry {
+        id: "pll-rb",
+        display_name: "Rb-perm",
+        family: AlgFamily::Pll,
+        notation: "R' U2 R U2 R' F R U R' U' R' F' R2",
+    },
+    AlgEntry {
+        id: "pll-ga",
+        display_name: "Ga-perm",
+        family: AlgFamily::Pll,
+        notation: "R2 U R' U R' U' R U' R2 U' D R' U R D'",
+    },
+    AlgEntry {
+        id: "pll-gb",
+        display_name: "Gb-perm",
+        family: AlgFamily::Pll,
+        notation: "R' U' R U D' R2 U R' U R U' R U' R2 D",
+    },
+    AlgEntry {
+        id: "pll-gc",
+        display_name: "Gc-perm",
+        family: AlgFamily::Pll,
+        notation: "R2 U' R U' R U R' U R2 U D' R U' R' D",
+    },
+    AlgEntry {
+        id: "pll-gd",
+        display_name: "Gd-perm",
+        family: AlgFamily::Pll,
+        notation: "R U R' U' D R2 U' R U' R' U R' U R2 D'",
+    },
     // --- F2L pair insertions ---
     AlgEntry {
         id: "f2l-basic-pair-fr",
@@ -172,6 +325,49 @@ mod tests {
             }
         }
         assert!(saw_oll && saw_pll && saw_f2l && saw_beginner);
+    }
+
+    /// OLLs operate only on the top layer — applying any OLL alg to a
+    /// solved cube must leave the bottom two layers' stickers identical
+    /// to solved (D face all D, side faces' bottom two rows their home
+    /// color). Top layer can be in any orientation/permutation.
+    #[test]
+    fn oll_algorithms_preserve_first_two_layers() {
+        use cube_core::{Color, Face, Facelets};
+        for entry in STARTER_ALGS.iter().filter(|e| e.family == AlgFamily::Oll) {
+            let mut cube = Cube::solved(3).unwrap();
+            cube.apply_seq(&entry.parse()).unwrap();
+            let f = Facelets::from_cube(&cube);
+            for side in [Face::F, Face::R, Face::B, Face::L] {
+                let expected = match side {
+                    Face::F => Color::F,
+                    Face::R => Color::R,
+                    Face::B => Color::B,
+                    Face::L => Color::L,
+                    _ => unreachable!(),
+                };
+                for row in 1..3u8 {
+                    for col in 0..3u8 {
+                        assert_eq!(
+                            f.get(side, row, col),
+                            expected,
+                            "{}: side {side:?} row {row} col {col} disturbed",
+                            entry.id
+                        );
+                    }
+                }
+            }
+            for row in 0..3u8 {
+                for col in 0..3u8 {
+                    assert_eq!(
+                        f.get(Face::D, row, col),
+                        Color::D,
+                        "{}: D face disturbed at ({row},{col})",
+                        entry.id
+                    );
+                }
+            }
+        }
     }
 
     /// PLLs preserve cube orientation up to a top-layer permutation: the

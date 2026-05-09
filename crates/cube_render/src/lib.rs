@@ -447,11 +447,16 @@ fn move_axis_world(m: Move) -> Vec3 {
 }
 
 /// Signed quarter-turn angle in radians around [`move_axis_world`].
+///
+/// WCA "CW from outside the +s face" is right-hand rotation around -s,
+/// i.e. a negative angle when expressed around the outward axis +s. So
+/// `Turn::Cw` returns `-π/2` here, matching the rotation that
+/// [`Move::rotation`] computes in the cube's logical group.
 fn move_angle_radians(m: Move) -> f32 {
     match m.turn {
-        Turn::Cw => std::f32::consts::FRAC_PI_2,
+        Turn::Cw => -std::f32::consts::FRAC_PI_2,
         Turn::Half => std::f32::consts::PI,
-        Turn::Ccw => -std::f32::consts::FRAC_PI_2,
+        Turn::Ccw => std::f32::consts::FRAC_PI_2,
     }
 }
 
@@ -884,15 +889,16 @@ mod tests {
 
     #[test]
     fn move_axis_and_angle_sign_consistent() {
-        // R-cw should rotate around +X by +90°.
+        // R-cw rotates around +X by -90° (WCA "CW from outside" =
+        // right-hand rule around the inward direction).
         let m = Move::face(Face::R, Turn::Cw);
         assert_eq!(move_axis_world(m), Vec3::X);
-        assert!((move_angle_radians(m) - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
+        assert!((move_angle_radians(m) + std::f32::consts::FRAC_PI_2).abs() < 1e-6);
 
-        // L-cw rotates around -X by +90° (equivalent to +X by -90°).
+        // L-cw: axis is -X, angle is -π/2 (= +π/2 around +X).
         let m = Move::face(Face::L, Turn::Cw);
         assert_eq!(move_axis_world(m), -Vec3::X);
-        assert!((move_angle_radians(m) - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
+        assert!((move_angle_radians(m) + std::f32::consts::FRAC_PI_2).abs() < 1e-6);
 
         // F-cw, half turn.
         let m = Move { face: Face::F, turn: Turn::Half, depth: 1, wide: false };

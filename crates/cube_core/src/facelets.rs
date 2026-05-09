@@ -455,10 +455,20 @@ fn is_corner(pos: IVec3, size: u8) -> bool {
 }
 
 /// Kociemba-standard edge orientation for the [`Facelets::validate`] sum
-/// invariant. Differs from [`crate::cube::edge_orient`], which uses an
-/// axis-strict definition (good axis = exact original axis); the standard
-/// rule treats *any* of {Y, Z} as good and only X (R/L faces) as bad.
-/// Sum mod 2 across all 12 edges of a 3×3 must be 0 for reachable states.
+/// invariant.
+///
+/// The "primary sticker" of an edge is determined by cubie *identity*:
+/// - UD-layer edges (home `y ≠ 0`): the U/D-colored sticker.
+/// - E-slice edges (home `y = 0`): the F/B-colored sticker.
+///
+/// The "good axis" — what direction the primary should face for EO=0 —
+/// is determined by the current *slot*, not the home:
+/// - UD-layer slots (current `y ≠ 0`): good axis is Y.
+/// - E-slice slots (current `y = 0`): good axis is Z.
+///
+/// Under these slot-based rules, every quarter turn of `R, L, F, B`
+/// flips exactly four edges (so EO sum mod 2 is preserved), and U, D,
+/// and the squared turns flip none — the standard G1 invariant.
 fn kociemba_edge_orient(cubie: &crate::cube::Cubie) -> u8 {
     let h = cubie.solved_pos;
     let primary = if h.y != 0 {
@@ -469,7 +479,16 @@ fn kociemba_edge_orient(cubie: &crate::cube::Cubie) -> u8 {
         IVec3::NEG_Z
     };
     let now = cubie.orientation.apply(primary);
-    if now.x != 0 { 1 } else { 0 }
+    let now_axis = if now.x != 0 {
+        0
+    } else if now.y != 0 {
+        1
+    } else {
+        2
+    };
+    let slot = cubie.current_pos;
+    let good_axis: u8 = if slot.y != 0 { 1 } else { 2 };
+    if now_axis == good_axis { 0 } else { 1 }
 }
 
 fn is_edge(pos: IVec3, size: u8) -> bool {

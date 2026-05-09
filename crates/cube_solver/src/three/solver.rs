@@ -1,9 +1,12 @@
 //! Two-phase IDA* solver. Phase 1 reduces to G1 = ⟨U, D, R², L², F², B²⟩;
 //! Phase 2 finishes from G1 to solved using only G1 moves.
 
+use std::path::Path;
+
 use cube_core::{Cube, Move, MoveSeq};
 use thiserror::Error;
 
+use super::cache;
 use super::coords::{encode_co, encode_cp, encode_ep, encode_udslice, encode_udslice_perm};
 use super::moves::{PHASE1_MOVES, PHASE2_TO_PHASE1};
 use super::state::State3x3;
@@ -27,10 +30,29 @@ pub struct Solver3x3 {
 
 impl Solver3x3 {
     /// Build move tables and pruning tables. Takes a few seconds on first
-    /// run; later milestones (M9+) wire in disk caching.
+    /// run. Use [`Self::new_with_cache`] to amortise across launches.
     pub fn new() -> Self {
         let move_tables = MoveTables::build();
         let pruning = PruningTables::build(&move_tables);
+        Self { move_tables, pruning }
+    }
+
+    /// Same as [`Self::new`] but tries to load the pruning tables from
+    /// `cache_path` first. On any load error (missing file, bad magic,
+    /// version mismatch, truncation, size mismatch), builds from scratch
+    /// and writes the freshly built tables to `cache_path` so the next
+    /// launch is fast. Move-table build is fast (group-table lookup) and
+    /// is always run from scratch.
+    pub fn new_with_cache(cache_path: &Path) -> Self {
+        let move_tables = MoveTables::build();
+        let pruning = match cache::load(cache_path) {
+            Ok(p) => p,
+            Err(_) => {
+                let p = PruningTables::build(&move_tables);
+                let _ = cache::save(&p, cache_path);
+                p
+            }
+        };
         Self { move_tables, pruning }
     }
 

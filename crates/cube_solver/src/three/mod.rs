@@ -1,5 +1,6 @@
 //! 3×3 two-phase solver. See plan §6.4.
 
+pub mod cache;
 pub mod coords;
 pub mod moves;
 pub mod solver;

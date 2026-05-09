@@ -124,18 +124,31 @@ impl Move {
 
     /// The rotation matrix corresponding to this move's turn, expressed as
     /// an [`Orient`] index.
+    ///
+    /// WCA "CW from outside" means: the observer stands on the +s side of
+    /// the face's axis, looks toward the cube, with their head along +Y.
+    /// Their right hand then points along `forward × up`. For the +X face,
+    /// forward = −X and up = +Y → right = −Z, so a CW turn (top → right)
+    /// is +Y → −Z — that is the right-hand rotation around −X (= around
+    /// +X by −90°), i.e. our `rx_ccw`. The same flip applies to every
+    /// face: `forward = ccw_around_axis` when `outward_sign == +1`.
+    ///
+    /// Earlier versions of this function had the mapping inverted (using
+    /// the right-hand-rule rotation directly), which produced a fully
+    /// internally-consistent cube simulator that disagreed with WCA on
+    /// the direction of every face. Order-symmetric properties (`X^4 =
+    /// id`, `A · A⁻¹ = id`, `sexy^6 = id`) hide the mismatch, but order-2
+    /// algorithms like T-perm — whose inverse is themselves — expose it.
     pub fn rotation(self) -> Orient {
         let g = generators();
         let outward_sign = self.face.axis_sign();
-        // For a face with outward sign s, CW from outside = +90° around (s * axis).
-        // s * +90° around axis = (s == +1 ? cw_axis : ccw_axis).
         let (cw, ccw, half) = match self.face.axis() {
             0 => (g.rx_cw, g.rx_ccw, g.rx_2),
             1 => (g.ry_cw, g.ry_ccw, g.ry_2),
             2 => (g.rz_cw, g.rz_ccw, g.rz_2),
             _ => unreachable!(),
         };
-        let (forward, backward) = if outward_sign == 1 { (cw, ccw) } else { (ccw, cw) };
+        let (forward, backward) = if outward_sign == 1 { (ccw, cw) } else { (cw, ccw) };
         match self.turn {
             Turn::Cw => forward,
             Turn::Ccw => backward,

@@ -1785,6 +1785,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "cube_core",
+ "cube_guides",
  "cube_render",
  "rand",
  "rand_chacha",
