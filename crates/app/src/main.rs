@@ -26,6 +26,9 @@ use cube_trainer::{
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
+mod hud;
+use hud::HudPlugin;
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -40,6 +43,7 @@ fn main() {
         .add_plugins(CubeRenderPlugin)
         .add_plugins(DragInputPlugin)
         .add_plugins(TrainerPlugin)
+        .add_plugins(HudPlugin)
         .insert_resource(ClearColor(Color::srgb(0.55, 0.55, 0.6)))
         .insert_resource(InputRng(ChaCha8Rng::seed_from_u64(0x00C0_FFEE)))
         .insert_resource(SolverCache::default())
