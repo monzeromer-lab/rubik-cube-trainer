@@ -50,3 +50,13 @@ target_sdk_version = 34
 
 [package.metadata.android.application]
 label = "Rubik's Trainer"
+
+# Release-build signing. The keystore lives in `~/.android/` (outside
+# the repo so the private key isn't committed). Generated with:
+#   keytool -genkey -v -keystore ~/.android/rubiks-trainer-release.keystore \
+#     -alias rubiks-trainer -keyalg RSA -keysize 2048 -validity 10000 \
+#     -storepass rubikstrainer -keypass rubikstrainer
+# Replace with a properly-secured key before any Play Store submission.
+[package.metadata.android.signing.release]
+path = "/home/monzer-omer/.android/rubiks-trainer-release.keystore"
+keystore_password = "rubikstrainer"
