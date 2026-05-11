@@ -15,6 +15,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::prelude::*;
 use bevy::tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future};
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
@@ -306,11 +307,15 @@ fn keyboard_size_switch(
 
 fn setup_scene(mut commands: Commands) {
     // Three-light setup for a "studio shoot" feel — see plan §10.4.
+    // `shadows_enabled` is off everywhere because the directional
+    // shadow-map path causes visible flicker on some Android drivers
+    // (Adreno/Mali split on which dynamic-state features they expose).
+    // Shadows are aesthetic on a cube; flicker is a regression.
     commands.spawn((
         DirectionalLight {
             illuminance: 18_000.0,
             color: Color::srgb(1.0, 0.96, 0.92),
-            shadows_enabled: true,
+            shadows_enabled: false,
             ..default()
         },
         Transform::from_xyz(4.0, 8.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
@@ -336,6 +341,29 @@ fn setup_scene(mut commands: Commands) {
 
     commands.spawn((
         Camera3d::default(),
+        // Tonemapping on Bevy 0.18 defaults to `TonyMcMapface`, an
+        // LUT-based filmic tonemap that goes near-grey on the
+        // Mali-G57's Vulkan path (and similar mid-range Android GPUs).
+        // `Tonemapping::None` skips the LUT pass and feeds sRGB
+        // colours straight to the framebuffer. The cube looks
+        // marginally less "filmic" on desktop, identical otherwise.
+        // (HDR is opt-in via the `Hdr` marker component in 0.18, so
+        // we simply don't add it — the pipeline stays in LDR.)
+        Tonemapping::None,
+        // Mali drivers sometimes flicker through MSAA resolves. The
+        // cube has very few edges per cubie so the visual cost is
+        // tiny, and disabling MSAA is a known fix for that flicker.
+        Msaa::Off,
+        // Ambient fill component: ensures the dark cube body (#0.05)
+        // is visible even on devices where directional shadow-map
+        // rendering falls back to an unlit path (mobile GPUs with
+        // limited Vulkan feature support). `AmbientLight` is per-
+        // camera in Bevy 0.18, so it lives on the Camera3d entity.
+        AmbientLight {
+            color: Color::srgb(1.0, 1.0, 1.0),
+            brightness: 250.0,
+            ..default()
+        },
         Transform::from_xyz(4.0, 4.0, 6.0).looking_at(Vec3::ZERO, Vec3::Y),
         PanOrbitCamera {
             focus: Vec3::ZERO,
@@ -413,9 +441,18 @@ fn despawn_main_menu(mut commands: Commands, q: Query<Entity, With<MainMenuRoot>
 
 fn main_menu_input(
     keys: Res<ButtonInput<KeyCode>>,
+    touches: Res<Touches>,
+    mouse: Res<ButtonInput<MouseButton>>,
     mut next: ResMut<NextState<AppState>>,
 ) {
-    if keys.just_pressed(KeyCode::Enter) {
+    // Enter dismisses on desktop; any tap or click dismisses on touch.
+    // `touches.any_just_pressed()` covers Android and trackpad touch;
+    // `MouseButton::Left` catches mouse clicks. Either way, leaving the
+    // menu requires a fresh press this frame (no auto-skip on launch).
+    let pressed = keys.just_pressed(KeyCode::Enter)
+        || mouse.just_pressed(MouseButton::Left)
+        || touches.iter_just_pressed().next().is_some();
+    if pressed {
         next.set(AppState::Playing);
     }
 }

@@ -503,10 +503,20 @@ fn plastic_material() -> StandardMaterial {
 }
 
 fn sticker_material(c: Color) -> StandardMaterial {
+    // Stickers are emissive at full intensity so the colour shows on
+    // every backend regardless of lighting and tonemapping. `unlit`
+    // alone wasn't enough on Mali-G57 — the unlit path still appeared
+    // washed-grey there. Setting `emissive` to a scaled `base_color`
+    // forces the PBR shader's add-emissive branch to dominate, which
+    // produces a guaranteed-visible colour. `LinearRgba::from(srgb)`
+    // does the sRGB → linear conversion so the on-screen colour
+    // matches what the palette declares.
+    let linear = LinearRgba::from(c);
     StandardMaterial {
         base_color: c,
-        perceptual_roughness: 0.4,
-        reflectance: 0.5,
+        emissive: LinearRgba::rgb(linear.red * 4.0, linear.green * 4.0, linear.blue * 4.0),
+        perceptual_roughness: 1.0,
+        reflectance: 0.0,
         metallic: 0.0,
         ..default()
     }

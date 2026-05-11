@@ -45,7 +45,22 @@ impl Plugin for DragInputPlugin {
         app.add_plugins(bevy::picking::mesh_picking::MeshPickingPlugin)
             .init_resource::<DragState>()
             .add_observer(on_sticker_pressed)
+            .add_observer(on_pointer_released)
             .add_systems(Update, update_drag);
+    }
+}
+
+/// Mirror of [`on_sticker_pressed`] for the release half of the gesture.
+/// Listens on the global `Pointer<Release>` stream so touch lift-up
+/// clears `DragState` exactly like a mouse-up does on desktop.  This
+/// also handles pointer-cancel (e.g. multi-touch starting while a drag
+/// is in progress) — any release event ends the drag.
+fn on_pointer_released(
+    trigger: On<Pointer<Release>>,
+    mut drag: ResMut<DragState>,
+) {
+    if trigger.event().button == PointerButton::Primary {
+        drag.0 = None;
     }
 }
 
@@ -93,18 +108,17 @@ fn update_drag(
     mut drag: ResMut<DragState>,
     mut pending: ResMut<PendingMoves>,
     cube_state: Res<CubeState>,
-    buttons: Res<ButtonInput<MouseButton>>,
     pointers: Query<&PointerLocation>,
     cameras: Query<(&Camera, &GlobalTransform)>,
 ) {
+    // Drag start/end are observed through `Pointer<Press>`/`Pointer<Release>`
+    // events (see `on_sticker_pressed` and `on_pointer_released`). That
+    // flow works for both mouse and touch via bevy_picking. This system
+    // just polls the active pointer position to compute the screen-space
+    // delta and commit the move once the drag exceeds threshold.
     let Some(info) = drag.0.as_mut() else {
         return;
     };
-    if !buttons.pressed(MouseButton::Left) {
-        // Released — clear state regardless of whether we committed.
-        drag.0 = None;
-        return;
-    }
     if info.committed {
         return;
     }
