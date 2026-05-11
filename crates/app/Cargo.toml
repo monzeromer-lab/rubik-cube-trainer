@@ -3,6 +3,8 @@ name = "rubiks-trainer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+homepage.workspace = true
 repository.workspace = true
 description = "Rubik's cube game and trainer."
 
@@ -28,12 +30,60 @@ cube_trainer = { path = "../cube_trainer" }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 
+# `build.rs` uses this to embed `icon.ico` into the Windows `.exe`. It
+# does nothing on non-Windows targets, so listing it unconditionally is
+# fine — `cargo` only pulls it in when the build script needs it.
+[build-dependencies]
+embed-resource = "2"
+
 # `NativeActivity` is the older Android entry point but it pairs with
 # `cargo-apk` out of the box (no Java/Kotlin glue or Gradle setup).
 # For a personal sideload-and-test workflow that's enough; switching
 # to `android-game-activity` later requires a Gradle wrapper.
 [target.'cfg(target_os = "android")'.dependencies]
 bevy = { workspace = true, features = ["android-native-activity"] }
+
+# `cargo-deb` reads this section. Run from the workspace root:
+#
+#     cargo deb -p rubiks-trainer --no-build \
+#         --profile dist \
+#         --deb-revision=1
+#
+# `--no-build` is important because cargo-deb's default behaviour is
+# to rebuild with the `release` profile; we want the smaller
+# `dist`-profile binary that's already in `target/dist/`.
+[package.metadata.deb]
+maintainer = "Monzer Omer <monzer.a.omer@gmail.com>"
+copyright = "2026 Monzer Omer"
+section = "games"
+priority = "optional"
+extended-description = """\
+A speed-cubing trainer with a built-in two-phase 3x3 solver, drill
+modes for OLL/PLL practice, and a timer with WCA-style inspection.
+Also handles 2x2, 4x4, and 5x5 cubes."""
+# Bevy dlopens most of its renderer/window deps at startup; ldd can't
+# see them, so they're listed explicitly. libc6 covers glibc.
+depends = "libc6, libxkbcommon0, libgl1, libvulkan1, libx11-6, libxcursor1, libxrandr2, libxi6, libwayland-client0, libegl1"
+# Default cargo-deb behaviour would put the binary at /usr/bin and
+# nothing else. We need the assets next to the binary so Bevy's
+# AssetServer can find them, plus a wrapper at /usr/bin that cd's into
+# the install dir before exec'ing.
+assets = [
+    ["target/dist/rubiks-trainer",                      "usr/lib/rubiks-trainer/rubiks-trainer", "755"],
+    ["../../assets/guides/beginner_white_cross.ron",    "usr/lib/rubiks-trainer/assets/guides/beginner_white_cross.ron", "644"],
+    ["../../assets/guides/nxn_reduction.ron",           "usr/lib/rubiks-trainer/assets/guides/nxn_reduction.ron", "644"],
+    ["../../dist/rubiks-trainer.wrapper",               "usr/bin/rubiks-trainer", "755"],
+    ["../../dist/rubiks-trainer.desktop",               "usr/share/applications/rubiks-trainer.desktop", "644"],
+    ["../../assets/branding/icon.svg",                  "usr/share/icons/hicolor/scalable/apps/rubiks-trainer.svg", "644"],
+    ["../../assets/branding/png/icon-16.png",           "usr/share/icons/hicolor/16x16/apps/rubiks-trainer.png", "644"],
+    ["../../assets/branding/png/icon-24.png",           "usr/share/icons/hicolor/24x24/apps/rubiks-trainer.png", "644"],
+    ["../../assets/branding/png/icon-32.png",           "usr/share/icons/hicolor/32x32/apps/rubiks-trainer.png", "644"],
+    ["../../assets/branding/png/icon-48.png",           "usr/share/icons/hicolor/48x48/apps/rubiks-trainer.png", "644"],
+    ["../../assets/branding/png/icon-64.png",           "usr/share/icons/hicolor/64x64/apps/rubiks-trainer.png", "644"],
+    ["../../assets/branding/png/icon-128.png",          "usr/share/icons/hicolor/128x128/apps/rubiks-trainer.png", "644"],
+    ["../../assets/branding/png/icon-256.png",          "usr/share/icons/hicolor/256x256/apps/rubiks-trainer.png", "644"],
+    ["../../assets/branding/png/icon-512.png",          "usr/share/icons/hicolor/512x512/apps/rubiks-trainer.png", "644"],
+]
 
 # `cargo-apk` reads this section to produce the APK manifest.
 [package.metadata.android]
@@ -43,6 +93,9 @@ build_targets = ["aarch64-linux-android"]
 # given directory under `assets/` inside the APK so Bevy's
 # `AssetServer` picks the same paths up at runtime.
 assets = "../../assets"
+# Android resource tree. `res/mipmap-*/icon.png` provides launcher
+# icons at every standard density (mdpi 48 → xxxhdpi 192).
+res = "res"
 
 [package.metadata.android.sdk]
 min_sdk_version = 28
@@ -50,6 +103,9 @@ target_sdk_version = 34
 
 [package.metadata.android.application]
 label = "Rubik's Trainer"
+# References `res/mipmap-*/icon.png` — Android picks the density that
+# matches the user's screen.
+icon = "@mipmap/icon"
 
 # Release-build signing. The keystore lives in `~/.android/` (outside
 # the repo so the private key isn't committed). Generated with:

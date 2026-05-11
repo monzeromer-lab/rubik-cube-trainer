@@ -6,7 +6,9 @@ resolver = "3"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/monzer-omer/rubiks-trainer"
+authors = ["Monzer Omer <monzer.a.omer@gmail.com>"]
+homepage = "https://github.com/monzeromer-lab"
+repository = "https://github.com/monzeromer-lab/rubik-cube-trainer"
 
 [workspace.dependencies]
 bevy = { version = "0.18", default-features = false, features = [
@@ -53,3 +55,12 @@ lto = "thin"
 codegen-units = 1
 debug = 1
 opt-level = 3
+
+# Distribution profile for shipping to Linux/Windows users — same opt
+# settings as `release` but with everything stripped so the binary is
+# roughly 1/3 the size. Keeps `release` debug-info intact for local
+# debugging; use `cargo build --profile dist` when packaging.
+[profile.dist]
+inherits = "release"
+debug = false
+strip = "symbols"
